@@ -15,8 +15,8 @@ services:
       container_name: ssserver
       restart: always
       ports:
-        - "8388:8388/tcp"
-        - "8388:8388/udp"
+        - "40105:40105/tcp"
+        - "40105:40105/udp"
       volumes:
         - ./config/config.json:/etc/shadowsocks-rust/config.json:ro
       environment:

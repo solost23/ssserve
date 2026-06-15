@@ -6,8 +6,8 @@ log-level: info
 proxies:
   - name: Tokyo
     type: ss
-    server: 38.47.105.9
-    port: 8388
+    server: tokyo-node.duckdns.org
+    port: 40105
     cipher: aes-256-gcm
     password: "wHWJNebP6TE90lu1tLIsFQZurLOzln8rAWmT/L48JSA="
     udp: true
