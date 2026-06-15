@@ -1,4 +1,15 @@
 services:
+    nginx:
+      image: nginx:alpine
+      container_name: nginx-sub
+      restart: always
+      ports:
+        - "8080:8080"
+      volumes:
+        - ./config/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+        - ./config/subscribe:/etc/nginx/subscribe:ro
+        - ./logs/nginx:/var/log/nginx
+
     ssserver:
       image: ghcr.io/shadowsocks/ssserver-rust:latest
       container_name: ssserver
@@ -7,7 +18,7 @@ services:
         - "8388:8388/tcp"
         - "8388:8388/udp"
       volumes:
-        - ./config.json:/etc/shadowsocks-rust/config.json:ro
+        - ./config/config.json:/etc/shadowsocks-rust/config.json:ro
       environment:
         RUST_LOG: trace
       logging:
