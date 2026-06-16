@@ -23,7 +23,7 @@ services:
       volumes:
         - ./config/config.json:/etc/shadowsocks-rust/config.json:ro
       environment:
-        RUST_LOG: trace
+        RUST_LOG: warn
       logging:
         driver: json-file
         options:

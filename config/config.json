@@ -3,5 +3,15 @@
     "server_port": 40105,
     "method": "aes-256-gcm",
     "password": "wHWJNebP6TE90lu1tLIsFQZurLOzln8rAWmT/L48JSA=",
-    "mode": "tcp_and_udp"
+    "mode": "tcp_and_udp",
+    "fast_open": true,
+    "no_delay": true,
+    "keep_alive": 15,
+    "nofile": 65535,
+    "log": {
+        "level": 1
+    },
+    "runtime": {
+        "mode": "multi_thread"
+    }
 }
