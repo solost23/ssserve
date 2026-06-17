@@ -14,7 +14,7 @@ cp .env.example .env
 
 # 3. 申请 TLS 证书（首次）
 NGINX_CONF=nginx.bootstrap.conf docker compose up -d nginx
-docker compose run --rm certbot certonly --webroot -w /var/www/certbot -d <your-domain>
+docker compose run --rm --entrypoint certbot certbot certonly --webroot -w /var/www/certbot -d <your-domain>
 
 # 4. 启动所有服务
 docker compose up -d
