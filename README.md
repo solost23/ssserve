@@ -20,9 +20,9 @@ docker compose run --rm certbot certonly --webroot -w /var/www/certbot -d <your-
 docker compose up -d
 ```
 
-## 更换密码或重置订阅链接
+## 轮换密码或订阅链接
 
-重新编辑 `.env`，再跑一次 `./setup.sh` 即可。旧的订阅目录不会被删除，需要手动清理 `config/subscribe/`。
+重新编辑 `.env`，再跑一次 `./setup.sh` 并重启服务即可。旧的订阅目录需手动删除 `config/subscribe/`。
 
 ## 文件说明
 
@@ -35,16 +35,6 @@ docker compose up -d
 - `config/subscribe/clash.example.yaml` — Clash 订阅模板
 - `setup.sh` — 从 `.env` 生成所有运行时配置
 
-## 添加用户
-
-```bash
-HASH=$(openssl rand -hex 16)
-mkdir -p config/subscribe/$HASH
-cp config/subscribe/clash.example.yaml config/subscribe/$HASH/clash.yaml
-# 编辑 clash.yaml，填入该用户的密码（需在 config.json 的 users 里对应添加）
-```
-
 ## 安全注意事项
 
-如果密码或订阅链接曾经泄露，重跑 `./setup.sh`（先更新 `.env` 里的密码）并重启服务即可轮换。
-旧的订阅目录记得手动删除。
+如果密码或订阅链接曾经泄露，更新 `.env` 里的密码，重跑 `./setup.sh` 并重启服务即可轮换。旧的订阅目录记得手动删除。

@@ -20,20 +20,20 @@ fi
 SS_PORT="${SS_PORT:-40105}"
 
 # nginx configs
-sed "s/example.com/${SS_DOMAIN}/g" config/nginx.example.conf > config/nginx.conf
-sed "s/example.com/${SS_DOMAIN}/g" config/nginx.bootstrap.example.conf > config/nginx.bootstrap.conf
+sed "s|example.com|${SS_DOMAIN}|g" config/nginx.example.conf > config/nginx.conf
+sed "s|example.com|${SS_DOMAIN}|g" config/nginx.bootstrap.example.conf > config/nginx.bootstrap.conf
 
 # ssserver config
-sed "s/replace-with-a-long-random-password/${SS_PASSWORD}/g" config/config.example.json \
-    | sed "s/40105/${SS_PORT}/g" > config/config.json
+sed "s|replace-with-a-long-random-password|${SS_PASSWORD}|g" config/config.example.json \
+    | sed "s|40105|${SS_PORT}|g" > config/config.json
 
 # subscribe
 HASH=$(openssl rand -hex 16)
 mkdir -p "config/subscribe/${HASH}"
 sed \
-    -e "s/example.com/${SS_DOMAIN}/g" \
-    -e "s/40105/${SS_PORT}/g" \
-    -e "s/replace-with-a-long-random-password/${SS_PASSWORD}/g" \
+    -e "s|example.com|${SS_DOMAIN}|g" \
+    -e "s|40105|${SS_PORT}|g" \
+    -e "s|replace-with-a-long-random-password|${SS_PASSWORD}|g" \
     config/subscribe/clash.example.yaml > "config/subscribe/${HASH}/clash.yaml"
 
 echo ""
