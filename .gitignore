@@ -6,6 +6,7 @@ logs/
 config/config.json
 config/nginx.conf
 config/nginx.bootstrap.conf
+config/subscribe/**/*.yaml
 config/subscribe/*.yaml
 !config/subscribe/*.example.yaml
 certbot/conf/
