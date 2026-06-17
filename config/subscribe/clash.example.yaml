@@ -4,19 +4,19 @@ mode: rule
 log-level: info
 
 proxies:
-  - name: Tokyo
+  - name: Shadowsocks
     type: ss
-    server: tokyo-node.duckdns.org
+    server: example.com
     port: 40105
     cipher: aes-256-gcm
-    password: "wHWJNebP6TE90lu1tLIsFQZurLOzln8rAWmT/L48JSA="
+    password: "replace-with-a-long-random-password"
     udp: true
 
 proxy-groups:
   - name: Proxy
     type: select
     proxies:
-      - Tokyo
+      - Shadowsocks
       - DIRECT
 
 rules:

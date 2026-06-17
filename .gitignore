@@ -1,0 +1,13 @@
+.idea/
+logs/
+
+# Runtime secrets and generated certificate material.
+.env
+config/config.json
+config/nginx.conf
+config/nginx.bootstrap.conf
+config/subscribe/*.yaml
+!config/subscribe/*.example.yaml
+certbot/conf/
+certbot/www/*
+!certbot/www/.gitkeep

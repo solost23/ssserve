@@ -2,7 +2,7 @@
     "server": "0.0.0.0",
     "server_port": 40105,
     "method": "aes-256-gcm",
-    "password": "wHWJNebP6TE90lu1tLIsFQZurLOzln8rAWmT/L48JSA=",
+    "password": "replace-with-a-long-random-password",
     "mode": "tcp_and_udp",
     "fast_open": true,
     "no_delay": true,
