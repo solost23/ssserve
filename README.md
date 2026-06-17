@@ -22,7 +22,12 @@ docker compose up -d
 
 ## 轮换密码或订阅链接
 
-重新编辑 `.env`，再跑一次 `./setup.sh` 并重启服务即可。旧的订阅目录需手动删除 `config/subscribe/`。
+```bash
+./cleanup.sh && ./setup.sh
+docker compose up -d
+```
+
+旧订阅链接立即失效，`setup.sh` 输出新链接。
 
 ## 文件说明
 
@@ -34,6 +39,7 @@ docker compose up -d
 - `config/nginx.bootstrap.example.conf` — 申请证书时用的临时 nginx 配置模板
 - `config/subscribe/clash.example.yaml` — Clash 订阅模板
 - `setup.sh` — 从 `.env` 生成所有运行时配置
+- `cleanup.sh` — 清除所有生成的运行时配置，配合 `setup.sh` 重置
 
 ## 安全注意事项
 
