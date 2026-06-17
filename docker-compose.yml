@@ -13,17 +13,36 @@ services:
         - ./certbot/conf:/etc/letsencrypt:ro
         - ./logs/nginx:/var/log/nginx
 
+    certbot:
+      image: certbot/certbot
+      container_name: certbot
+      restart: unless-stopped
+      volumes:
+        - ./certbot/www:/var/www/certbot
+        - ./certbot/conf:/etc/letsencrypt
+      entrypoint: /bin/sh -c "trap exit TERM; while :; do certbot renew --quiet; sleep 12h & wait $${!}; done"
+
     ssserver:
       image: ghcr.io/shadowsocks/ssserver-rust:latest
       container_name: ssserver
       restart: always
       ports:
-        - "40105:40105/tcp"
-        - "40105:40105/udp"
+        - "${SS_PORT:-40105}:${SS_PORT:-40105}/tcp"
+        - "${SS_PORT:-40105}:${SS_PORT:-40105}/udp"
       volumes:
         - ./config/config.json:/etc/shadowsocks-rust/config.json:ro
       environment:
         RUST_LOG: warn
+      ulimits:
+        nofile:
+          soft: 65535
+          hard: 65535
+      healthcheck:
+        test: ["CMD-SHELL", "cat /proc/1/comm | grep -q ssserver"]
+        interval: 30s
+        timeout: 5s
+        retries: 3
+        start_period: 10s
       logging:
         driver: json-file
         options:
