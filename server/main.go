@@ -110,7 +110,7 @@ func main() {
 
 	h.syncToManager()
 	go func() {
-		for range time.Tick(5 * time.Minute) {
+		for range time.Tick(1 * time.Minute) {
 			h.pollStats()
 		}
 	}()
