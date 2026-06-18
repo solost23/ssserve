@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -77,7 +78,7 @@ func main() {
 	defer db.Close()
 
 	mgr := NewManager(cfg.ManagerAddr)
-	h := &handler{cfg: cfg, db: db, mgr: mgr}
+	h := &handler{cfg: cfg, db: db, mgr: mgr, statBase: make(map[int]int64)}
 
 	// sync active tokens to ssserver on startup
 	go h.syncToManager()
@@ -101,9 +102,11 @@ func main() {
 }
 
 type handler struct {
-	cfg Config
-	db  *DB
-	mgr *Manager
+	cfg        Config
+	db         *DB
+	mgr        *Manager
+	statBaseMu sync.Mutex
+	statBase   map[int]int64 // baseline stats snapshot taken at subserver start
 }
 
 // syncToManager re-registers all active tokens with ssserver.
@@ -120,6 +123,14 @@ func (h *handler) syncToManager() {
 		}
 	}
 	log.Printf("sync: registered %d active tokens", len(tokens))
+
+	// snapshot current ssmanager stats as baseline so we only count increments
+	if base, err := h.mgr.Stats(); err == nil {
+		h.statBaseMu.Lock()
+		h.statBase = base
+		h.statBaseMu.Unlock()
+		log.Printf("sync: baseline stats captured for %d ports", len(base))
+	}
 }
 
 func (h *handler) pollStats() {
@@ -128,11 +139,28 @@ func (h *handler) pollStats() {
 		log.Printf("stats poll: %v", err)
 		return
 	}
-	if err := h.db.UpdateStats(stats); err != nil {
+
+	h.statBaseMu.Lock()
+	increments := make(map[int]int64, len(stats))
+	for port, raw := range stats {
+		increments[port] = raw - h.statBase[port]
+		if increments[port] < 0 {
+			increments[port] = 0
+		}
+	}
+	h.statBaseMu.Unlock()
+
+	if err := h.db.AddStats(increments); err != nil {
 		log.Printf("stats update: %v", err)
 		return
 	}
-	// enforce quota: remove port from ssserver for over-limit tokens
+
+	// update baseline to current values
+	h.statBaseMu.Lock()
+	h.statBase = stats
+	h.statBaseMu.Unlock()
+
+	// enforce quota
 	tokens, err := h.db.ActiveTokens()
 	if err != nil {
 		return

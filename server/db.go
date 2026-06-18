@@ -47,7 +47,7 @@ func initDB(path string) (*DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	// migration: add server_port if upgrading from old schema
+	// migrations for existing installs
 	_, _ = db.Exec(`ALTER TABLE tokens ADD COLUMN server_port INTEGER NOT NULL DEFAULT 0`)
 	return &DB{db: db}, nil
 }
@@ -147,11 +147,14 @@ func (d *DB) UpdateQuota(token string, quotaGB *float64) error {
 	return err
 }
 
-func (d *DB) UpdateStats(stats map[int]int64) error {
-	for port, bytes := range stats {
+func (d *DB) AddStats(increments map[int]int64) error {
+	for port, delta := range increments {
+		if delta <= 0 {
+			continue
+		}
 		if _, err := d.db.Exec(
-			`UPDATE tokens SET used_bytes = ? WHERE server_port = ? AND active = 1`,
-			bytes, port,
+			`UPDATE tokens SET used_bytes = used_bytes + ? WHERE server_port = ? AND active = 1`,
+			delta, port,
 		); err != nil {
 			return err
 		}
