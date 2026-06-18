@@ -77,13 +77,13 @@ func initDB(path string) (*DB, error) {
 	if err := addColumnIfMissing(db, "tokens", "server_port", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return nil, err
 	}
-	if err := addColumnIfMissing(db, "tokens", "updated_at", "TEXT NOT NULL DEFAULT (datetime('now'))"); err != nil {
+	if err := addColumnIfMissing(db, "tokens", "updated_at", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return nil, err
 	}
 	if err := addColumnIfMissing(db, "tokens", "deleted_at", "TEXT"); err != nil {
 		return nil, err
 	}
-	if err := addColumnIfMissing(db, "admins", "updated_at", "TEXT NOT NULL DEFAULT (datetime('now'))"); err != nil {
+	if err := addColumnIfMissing(db, "admins", "updated_at", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return nil, err
 	}
 	if err := addColumnIfMissing(db, "admins", "deleted_at", "TEXT"); err != nil {
