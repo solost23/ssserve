@@ -18,6 +18,7 @@ import (
 
 type Config struct {
 	Domain        string
+	SubBaseURL    string
 	Cipher        string
 	NodeName      string
 	AdminSecret   string // used only to seed the owner account on first run
@@ -29,12 +30,13 @@ type Config struct {
 
 func loadConfig() Config {
 	c := Config{
-		Domain:      os.Getenv("SS_DOMAIN"),
-		Cipher:      getEnvOr("SS_CIPHER", "aes-256-gcm"),
-		NodeName:    getEnvOr("SS_NAME", "Tokyo"),
-		AdminSecret: os.Getenv("ADMIN_SECRET"),
-		DBPath:      getEnvOr("DB_PATH", "/data/sub.db"),
-		ManagerAddr: getEnvOr("MANAGER_ADDR", "ssserver:6001"),
+		Domain:        os.Getenv("SS_DOMAIN"),
+		SubBaseURL:    strings.TrimRight(os.Getenv("SUB_BASE_URL"), "/"),
+		Cipher:        getEnvOr("SS_CIPHER", "aes-256-gcm"),
+		NodeName:      getEnvOr("SS_NAME", "Tokyo"),
+		AdminSecret:   os.Getenv("ADMIN_SECRET"),
+		DBPath:        getEnvOr("DB_PATH", "/data/sub.db"),
+		ManagerAddr:   getEnvOr("MANAGER_ADDR", "ssserver:6001"),
 		UserPortStart: 40200,
 	}
 	if v := os.Getenv("SS_USER_PORT_START"); v != "" {
@@ -48,6 +50,9 @@ func loadConfig() Config {
 	if c.Domain == "" {
 		log.Fatal("SS_DOMAIN is required")
 	}
+	if c.SubBaseURL == "" {
+		c.SubBaseURL = "https://" + c.Domain
+	}
 	if c.AdminSecret == "" {
 		log.Fatal("ADMIN_SECRET is required")
 	}
@@ -59,6 +64,10 @@ func getEnvOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+func (c Config) SubURL(token string) string {
+	return fmt.Sprintf("%s/sub/%s/clash.yaml", c.SubBaseURL, token)
 }
 
 func generateToken() (string, error) {
@@ -372,8 +381,7 @@ func (h *handler) handleSub(w http.ResponseWriter, r *http.Request) {
 	}
 
 	yaml := renderClash(h.cfg, t.Password, t.ServerPort)
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", `attachment; filename="clash.yaml"`)
+	w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 	fmt.Fprint(w, yaml)
 }
@@ -406,7 +414,7 @@ func (h *handler) handleTokens(w http.ResponseWriter, r *http.Request) {
 				ID:         t.ID,
 				Name:       t.Name,
 				Token:      t.Token,
-				SubURL:     fmt.Sprintf("https://%s/sub/%s/clash.yaml", h.cfg.Domain, t.Token),
+				SubURL:     h.cfg.SubURL(t.Token),
 				ServerPort: t.ServerPort,
 				QuotaGB:    t.QuotaGB,
 				UsedBytes:  t.UsedBytes,
@@ -468,7 +476,7 @@ func (h *handler) handleTokens(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusCreated, map[string]any{
 			"token":       t.Token,
 			"server_port": t.ServerPort,
-			"sub_url":     fmt.Sprintf("https://%s/sub/%s/clash.yaml", h.cfg.Domain, t.Token),
+			"sub_url":     h.cfg.SubURL(t.Token),
 		})
 
 	default:
