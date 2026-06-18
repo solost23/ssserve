@@ -68,8 +68,8 @@ func (c Config) SubURL(token string) string {
 }
 
 func (c Config) SSURL(password string, port int) string {
-	userInfo := fmt.Sprintf("%s:%s@%s:%d", c.Cipher, password, c.ServerAddr, port)
-	return fmt.Sprintf("ss://%s#%s", base64.RawURLEncoding.EncodeToString([]byte(userInfo)), url.QueryEscape(c.NodeName))
+	userInfo := base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", c.Cipher, password)))
+	return fmt.Sprintf("ss://%s@%s:%d#%s", userInfo, c.ServerAddr, port, url.QueryEscape(c.NodeName))
 }
 
 func generateToken() (string, error) {

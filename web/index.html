@@ -53,7 +53,7 @@
   .sub-url { font-family: monospace; font-size: .78rem; color: #555; word-break: break-all; }
   .link-stack { display: grid; gap: 4px; }
   .link-row { display: flex; align-items: center; gap: 8px; }
-  .link-label { font-size: .72rem; color: #777; text-transform: uppercase; letter-spacing: .02em; min-width: 54px; }
+  .link-label { font-size: .72rem; color: #777; text-transform: uppercase; letter-spacing: .02em; min-width: 86px; }
   .link-value { flex: 1; font-family: monospace; font-size: .78rem; color: #555; word-break: break-all; }
 
   .toast {
@@ -303,12 +303,12 @@ function renderTokens(tokens) {
           <div class="link-row">
             <span class="link-label">Clash</span>
             <span class="link-value">${esc(t.clash_url || t.sub_url)}</span>
-            <button class="btn-ghost" onclick="copyURL('${esc(t.clash_url || t.sub_url)}')">Copy</button>
+            <button class="btn-ghost" data-copy="${attr(t.clash_url || t.sub_url)}" onclick="copyFromButton(this)">Copy</button>
           </div>
           <div class="link-row">
-            <span class="link-label">SS</span>
+            <span class="link-label">Shadowrocket</span>
             <span class="link-value">${esc(t.ss_url || '')}</span>
-            <button class="btn-ghost" onclick="copyURL('${esc(t.ss_url || '')}')">Copy</button>
+            <button class="btn-ghost" data-copy="${attr(t.ss_url || '')}" onclick="copyFromButton(this)">Copy</button>
           </div>
         </div>
       </td>
@@ -424,8 +424,16 @@ function copyURL(url) {
     });
 }
 
+function copyFromButton(btn) {
+  copyURL(btn.dataset.copy || '');
+}
+
 function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function attr(s) {
+  return esc(s).replace(/'/g,'&#39;');
 }
 
 let toastTimer;
