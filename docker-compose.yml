@@ -25,7 +25,7 @@ services:
       entrypoint: /bin/sh -c "trap exit TERM; while :; do certbot renew --quiet; sleep 12h & wait $${!}; done"
 
     ssserver:
-      image: ghcr.io/shadowsocks/ssserver-rust:latest
+      build: ./ssmanager
       container_name: ssserver
       restart: always
       ports:
