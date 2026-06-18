@@ -22,6 +22,7 @@ type Token struct {
 	UpdatedAt  string
 	ExpiresAt  *string
 	Active     bool
+	Suspended  bool
 }
 
 type Admin struct {
@@ -41,6 +42,9 @@ func initDB(path string) (*DB, error) {
 	if err != nil {
 		return nil, err
 	}
+	if _, err := db.Exec(`PRAGMA journal_mode=WAL`); err != nil {
+		return nil, fmt.Errorf("enable WAL: %w", err)
+	}
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS tokens (
 			id          TEXT PRIMARY KEY,
@@ -49,12 +53,13 @@ func initDB(path string) (*DB, error) {
 			password    TEXT NOT NULL,
 			server_port INTEGER NOT NULL DEFAULT 0,
 			quota_gb    REAL,
-			used_bytes  INTEGER DEFAULT 0,
+			used_bytes  INTEGER NOT NULL DEFAULT 0,
+			suspended   INTEGER NOT NULL DEFAULT 0,
 			created_at  TEXT NOT NULL DEFAULT (datetime('now')),
 			updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
 			deleted_at  TEXT,
 			expires_at  TEXT,
-			active      INTEGER DEFAULT 1
+			active      INTEGER NOT NULL DEFAULT 1
 		)
 	`)
 	if err != nil {
@@ -64,7 +69,7 @@ func initDB(path string) (*DB, error) {
 		CREATE TABLE IF NOT EXISTS admins (
 			username      TEXT PRIMARY KEY,
 			password_hash TEXT NOT NULL,
-			is_owner      INTEGER DEFAULT 0,
+			is_owner      INTEGER NOT NULL DEFAULT 0,
 			created_at    TEXT NOT NULL DEFAULT (datetime('now')),
 			updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
 			deleted_at    TEXT
@@ -73,21 +78,17 @@ func initDB(path string) (*DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	// migrations for existing installs — each is idempotent via PRAGMA check
-	if err := addColumnIfMissing(db, "tokens", "server_port", "INTEGER NOT NULL DEFAULT 0"); err != nil {
-		return nil, err
-	}
-	if err := addColumnIfMissing(db, "tokens", "updated_at", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return nil, err
-	}
-	if err := addColumnIfMissing(db, "tokens", "deleted_at", "TEXT"); err != nil {
-		return nil, err
-	}
-	if err := addColumnIfMissing(db, "admins", "updated_at", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return nil, err
-	}
-	if err := addColumnIfMissing(db, "admins", "deleted_at", "TEXT"); err != nil {
-		return nil, err
+	for _, m := range []struct{ table, col, def string }{
+		{"tokens", "server_port", "INTEGER NOT NULL DEFAULT 0"},
+		{"tokens", "suspended", "INTEGER NOT NULL DEFAULT 0"},
+		{"tokens", "updated_at", "TEXT NOT NULL DEFAULT ''"},
+		{"tokens", "deleted_at", "TEXT"},
+		{"admins", "updated_at", "TEXT NOT NULL DEFAULT ''"},
+		{"admins", "deleted_at", "TEXT"},
+	} {
+		if err := addColumnIfMissing(db, m.table, m.col, m.def); err != nil {
+			return nil, fmt.Errorf("migrate %s.%s: %w", m.table, m.col, err)
+		}
 	}
 	return &DB{db: db}, nil
 }
@@ -103,15 +104,14 @@ func addColumnIfMissing(db *sql.DB, table, column, definition string) error {
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var cid int
+		var cid, notNull, pk int
 		var name, colType string
-		var notNull, pk int
 		var dflt any
 		if err := rows.Scan(&cid, &name, &colType, &notNull, &dflt, &pk); err != nil {
 			return err
 		}
 		if name == column {
-			return nil // already exists
+			return nil
 		}
 	}
 	_, err = db.Exec(`ALTER TABLE ` + table + ` ADD COLUMN ` + column + ` ` + definition)
@@ -176,7 +176,7 @@ func (d *DB) ListAdmins() ([]Admin, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var admins []Admin
+	admins := []Admin{}
 	for rows.Next() {
 		var a Admin
 		var isOwner int
@@ -189,7 +189,6 @@ func (d *DB) ListAdmins() ([]Admin, error) {
 	return admins, rows.Err()
 }
 
-// DeleteAdmin soft-deletes a non-owner admin.
 func (d *DB) DeleteAdmin(username string) error {
 	res, err := d.db.Exec(
 		`UPDATE admins SET deleted_at = ?, updated_at = ? WHERE username = ? AND is_owner = 0 AND deleted_at IS NULL`,
@@ -238,22 +237,26 @@ func (d *DB) CreateToken(name, token, password string, serverPort int, expiryDay
 	return d.GetActiveToken(token)
 }
 
+// GetActiveToken returns a token only if it is usable: not deleted, active, not suspended, not expired.
 func (d *DB) GetActiveToken(token string) (*Token, error) {
 	row := d.db.QueryRow(`
-		SELECT id, name, token, password, server_port, quota_gb, used_bytes, created_at, updated_at, expires_at, active
+		SELECT id, name, token, password, server_port, quota_gb, used_bytes,
+		       created_at, updated_at, expires_at, active, suspended
 		FROM tokens
 		WHERE token = ?
-		  AND active = 1
 		  AND deleted_at IS NULL
+		  AND active = 1
+		  AND suspended = 0
 		  AND (expires_at IS NULL OR expires_at > datetime('now'))
 	`, token)
 	return scanToken(row)
 }
 
-// GetToken fetches any non-deleted token (ignores active/expiry).
+// GetToken returns any non-deleted token regardless of active/suspended/expiry.
 func (d *DB) GetToken(token string) (*Token, error) {
 	row := d.db.QueryRow(`
-		SELECT id, name, token, password, server_port, quota_gb, used_bytes, created_at, updated_at, expires_at, active
+		SELECT id, name, token, password, server_port, quota_gb, used_bytes,
+		       created_at, updated_at, expires_at, active, suspended
 		FROM tokens WHERE token = ? AND deleted_at IS NULL
 	`, token)
 	return scanToken(row)
@@ -261,8 +264,35 @@ func (d *DB) GetToken(token string) (*Token, error) {
 
 func (d *DB) ListTokens() ([]Token, error) {
 	rows, err := d.db.Query(`
-		SELECT id, name, token, password, server_port, quota_gb, used_bytes, created_at, updated_at, expires_at, active
+		SELECT id, name, token, password, server_port, quota_gb, used_bytes,
+		       created_at, updated_at, expires_at, active, suspended
 		FROM tokens WHERE deleted_at IS NULL ORDER BY created_at DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	tokens := []Token{}
+	for rows.Next() {
+		t, err := scanToken(rows)
+		if err != nil {
+			return nil, err
+		}
+		tokens = append(tokens, *t)
+	}
+	return tokens, rows.Err()
+}
+
+// ActiveTokens returns tokens that should be registered with ssmanager.
+func (d *DB) ActiveTokens() ([]Token, error) {
+	rows, err := d.db.Query(`
+		SELECT id, name, token, password, server_port, quota_gb, used_bytes,
+		       created_at, updated_at, expires_at, active, suspended
+		FROM tokens
+		WHERE deleted_at IS NULL
+		  AND active = 1
+		  AND suspended = 0
+		  AND (expires_at IS NULL OR expires_at > datetime('now'))
 	`)
 	if err != nil {
 		return nil, err
@@ -277,6 +307,59 @@ func (d *DB) ListTokens() ([]Token, error) {
 		tokens = append(tokens, *t)
 	}
 	return tokens, rows.Err()
+}
+
+// ExpiredActiveTokens returns tokens that are past their expiry but still registered in ssmanager.
+func (d *DB) ExpiredActiveTokens() ([]Token, error) {
+	rows, err := d.db.Query(`
+		SELECT id, name, token, password, server_port, quota_gb, used_bytes,
+		       created_at, updated_at, expires_at, active, suspended
+		FROM tokens
+		WHERE deleted_at IS NULL
+		  AND active = 1
+		  AND suspended = 0
+		  AND expires_at IS NOT NULL
+		  AND expires_at <= datetime('now')
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var tokens []Token
+	for rows.Next() {
+		t, err := scanToken(rows)
+		if err != nil {
+			return nil, err
+		}
+		tokens = append(tokens, *t)
+	}
+	return tokens, rows.Err()
+}
+
+// SuspendToken marks a token as quota-suspended. Does not change active.
+func (d *DB) SuspendToken(token string) error {
+	_, err := d.db.Exec(
+		`UPDATE tokens SET suspended = 1, updated_at = ? WHERE token = ? AND deleted_at IS NULL`,
+		now(), token,
+	)
+	return err
+}
+
+// UpdateQuota sets a new quota and lifts suspension if the new quota is sufficient.
+func (d *DB) UpdateQuota(token string, quotaGB *float64) error {
+	_, err := d.db.Exec(`
+		UPDATE tokens
+		SET quota_gb   = ?,
+		    suspended  = CASE
+		                   WHEN ? IS NULL THEN 0
+		                   WHEN used_bytes < CAST(? * 1000000000 AS INTEGER) THEN 0
+		                   ELSE suspended
+		                 END,
+		    updated_at = ?
+		WHERE token = ? AND deleted_at IS NULL`,
+		quotaGB, quotaGB, quotaGB, now(), token,
+	)
+	return err
 }
 
 // DeleteToken soft-deletes a token.
@@ -295,37 +378,6 @@ func (d *DB) DeleteToken(token string) error {
 	return nil
 }
 
-func (d *DB) ActiveTokens() ([]Token, error) {
-	rows, err := d.db.Query(`
-		SELECT id, name, token, password, server_port, quota_gb, used_bytes, created_at, updated_at, expires_at, active
-		FROM tokens
-		WHERE active = 1
-		  AND deleted_at IS NULL
-		  AND (expires_at IS NULL OR expires_at > datetime('now'))
-	`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var tokens []Token
-	for rows.Next() {
-		t, err := scanToken(rows)
-		if err != nil {
-			return nil, err
-		}
-		tokens = append(tokens, *t)
-	}
-	return tokens, rows.Err()
-}
-
-func (d *DB) UpdateQuota(token string, quotaGB *float64) error {
-	_, err := d.db.Exec(
-		`UPDATE tokens SET quota_gb = ?, updated_at = ? WHERE token = ? AND deleted_at IS NULL`,
-		quotaGB, now(), token,
-	)
-	return err
-}
-
 func (d *DB) AddStats(increments map[int]int64) error {
 	for port, delta := range increments {
 		if delta <= 0 {
@@ -333,7 +385,7 @@ func (d *DB) AddStats(increments map[int]int64) error {
 		}
 		if _, err := d.db.Exec(
 			`UPDATE tokens SET used_bytes = used_bytes + ?, updated_at = ?
-			 WHERE server_port = ? AND active = 1 AND deleted_at IS NULL`,
+			 WHERE server_port = ? AND deleted_at IS NULL AND active = 1`,
 			delta, now(), port,
 		); err != nil {
 			return err
@@ -348,12 +400,16 @@ type scanner interface {
 
 func scanToken(s scanner) (*Token, error) {
 	var t Token
-	var active int
-	err := s.Scan(&t.ID, &t.Name, &t.Token, &t.Password, &t.ServerPort,
-		&t.QuotaGB, &t.UsedBytes, &t.CreatedAt, &t.UpdatedAt, &t.ExpiresAt, &active)
+	var active, suspended int
+	err := s.Scan(
+		&t.ID, &t.Name, &t.Token, &t.Password, &t.ServerPort,
+		&t.QuotaGB, &t.UsedBytes, &t.CreatedAt, &t.UpdatedAt, &t.ExpiresAt,
+		&active, &suspended,
+	)
 	if err != nil {
 		return nil, err
 	}
 	t.Active = active == 1
+	t.Suspended = suspended == 1
 	return &t, nil
 }

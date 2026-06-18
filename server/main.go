@@ -129,16 +129,14 @@ type handler struct {
 func (h *handler) syncToManager() {
 	tokens, err := h.db.ActiveTokens()
 	if err != nil {
-		log.Printf("sync: list tokens: %v", err)
-		return
+		log.Fatalf("sync: list tokens: %v", err)
 	}
 	for _, t := range tokens {
 		if err := h.mgr.AddServer(t.ServerPort, t.Password, h.cfg.Cipher); err != nil {
-			log.Printf("sync: add port %d: %v", t.ServerPort, err)
+			log.Fatalf("sync: add port %d: %v", t.ServerPort, err)
 		}
 	}
 	log.Printf("sync: registered %d active tokens", len(tokens))
-
 	if base, err := h.mgr.Stats(); err == nil {
 		h.statBaseMu.Lock()
 		h.statBase = base
@@ -166,12 +164,13 @@ func (h *handler) pollStats() {
 
 	if err := h.db.AddStats(increments); err != nil {
 		log.Printf("stats update: %v", err)
-		return
+		// don't update baseline — keep it so the increments are retried next poll
+		// continue to enforce quota using stale used_bytes
+	} else {
+		h.statBaseMu.Lock()
+		h.statBase = stats
+		h.statBaseMu.Unlock()
 	}
-
-	h.statBaseMu.Lock()
-	h.statBase = stats
-	h.statBaseMu.Unlock()
 
 	tokens, err := h.db.ActiveTokens()
 	if err != nil {
@@ -182,8 +181,28 @@ func (h *handler) pollStats() {
 			if err := h.mgr.RemoveServer(t.ServerPort); err != nil {
 				log.Printf("quota enforce: remove port %d: %v", t.ServerPort, err)
 			} else {
-				log.Printf("quota exceeded: removed port %d (%s)", t.ServerPort, t.Name)
+				log.Printf("quota exceeded: suspended port %d (%s)", t.ServerPort, t.Name)
 			}
+			if err := h.db.SuspendToken(t.Token); err != nil {
+				log.Printf("quota enforce: suspend token %s: %v", t.Token, err)
+			}
+		}
+	}
+
+	// remove expired tokens from ssmanager
+	expired, err := h.db.ExpiredActiveTokens()
+	if err != nil {
+		log.Printf("expired tokens query: %v", err)
+		return
+	}
+	for _, t := range expired {
+		if err := h.mgr.RemoveServer(t.ServerPort); err != nil {
+			log.Printf("expiry enforce: remove port %d: %v", t.ServerPort, err)
+		} else {
+			log.Printf("token expired: removed port %d (%s)", t.ServerPort, t.Name)
+		}
+		if err := h.db.SuspendToken(t.Token); err != nil {
+			log.Printf("expiry enforce: suspend token %s: %v", t.Token, err)
 		}
 	}
 }
@@ -352,11 +371,6 @@ func (h *handler) handleSub(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if t.QuotaGB != nil && float64(t.UsedBytes) >= *t.QuotaGB*1e9 {
-		http.Error(w, "quota exceeded", http.StatusForbidden)
-		return
-	}
-
 	yaml := renderClash(h.cfg, t.Password, t.ServerPort)
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", `attachment; filename="clash.yaml"`)
@@ -384,6 +398,7 @@ func (h *handler) handleTokens(w http.ResponseWriter, r *http.Request) {
 			UpdatedAt  string   `json:"updated_at"`
 			ExpiresAt  *string  `json:"expires_at"`
 			Active     bool     `json:"active"`
+			Suspended  bool     `json:"suspended"`
 		}
 		resp := make([]tokenResp, len(tokens))
 		for i, t := range tokens {
@@ -399,6 +414,7 @@ func (h *handler) handleTokens(w http.ResponseWriter, r *http.Request) {
 				UpdatedAt:  t.UpdatedAt,
 				ExpiresAt:  t.ExpiresAt,
 				Active:     t.Active,
+				Suspended:  t.Suspended,
 			}
 		}
 		writeJSON(w, http.StatusOK, resp)
@@ -432,8 +448,20 @@ func (h *handler) handleTokens(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "failed to register with ssserver: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
+		// seed baseline for this port so the first poll doesn't count pre-existing bytes
+		if base, err := h.mgr.Stats(); err == nil {
+			h.statBaseMu.Lock()
+			if _, exists := h.statBase[port]; !exists {
+				h.statBase[port] = base[port]
+			}
+			h.statBaseMu.Unlock()
+		}
 		t, err := h.db.CreateToken(req.Name, token, password, port, req.ExpiryDays, req.QuotaGB)
 		if err != nil {
+			// roll back ssmanager registration to avoid port leak
+			if rmErr := h.mgr.RemoveServer(port); rmErr != nil {
+				log.Printf("create token: rollback remove port %d: %v", port, rmErr)
+			}
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -469,8 +497,11 @@ func (h *handler) handleTokenByID(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		// re-register with ssmanager if suspension was lifted
 		if t, err := h.db.GetActiveToken(token); err == nil {
-			_ = h.mgr.AddServer(t.ServerPort, t.Password, h.cfg.Cipher)
+			if err := h.mgr.AddServer(t.ServerPort, t.Password, h.cfg.Cipher); err != nil {
+				log.Printf("quota update: re-register port %d: %v", t.ServerPort, err)
+			}
 		}
 		w.WriteHeader(http.StatusNoContent)
 
@@ -481,7 +512,7 @@ func (h *handler) handleTokenByID(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
-		if t.Active {
+		if t.Active && !t.Suspended {
 			if err := h.mgr.RemoveServer(t.ServerPort); err != nil {
 				log.Printf("warn: remove port %d: %v", t.ServerPort, err)
 			}

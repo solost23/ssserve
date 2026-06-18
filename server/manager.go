@@ -58,24 +58,22 @@ func (m *Manager) Stats() (map[int]int64, error) {
 		return nil, err
 	}
 
-	stats := make(map[int]int64)
 	buf := make([]byte, 65535)
-	for {
-		n, err := conn.Read(buf)
-		if err != nil {
-			break
-		}
-		s := string(buf[:n])
-		if strings.HasPrefix(s, "stat: ") {
-			var raw map[string]int64
-			if jsonErr := json.Unmarshal([]byte(strings.TrimPrefix(s, "stat: ")), &raw); jsonErr == nil {
-				for k, v := range raw {
-					var port int
-					fmt.Sscanf(k, "%d", &port)
-					stats[port] = v
-				}
+	n, err := conn.Read(buf)
+	if err != nil {
+		return nil, err
+	}
+
+	stats := make(map[int]int64)
+	s := string(buf[:n])
+	if strings.HasPrefix(s, "stat: ") {
+		var raw map[string]int64
+		if jsonErr := json.Unmarshal([]byte(strings.TrimPrefix(s, "stat: ")), &raw); jsonErr == nil {
+			for k, v := range raw {
+				var port int
+				fmt.Sscanf(k, "%d", &port)
+				stats[port] = v
 			}
-			break
 		}
 	}
 	return stats, nil

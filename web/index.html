@@ -274,6 +274,10 @@ function renderTokens(tokens) {
     const overQuota = t.quota_gb && t.used_bytes >= t.quota_gb * 1e9;
     const quotaLabel = t.quota_gb ? `${t.quota_gb} GB` : '∞';
     const usedPct = t.quota_gb ? Math.min(100, t.used_bytes / (t.quota_gb * 1e9) * 100) : 0;
+    let statusClass, statusText;
+    if (!t.active)        { statusClass = 'badge-inactive'; statusText = 'Deleted'; }
+    else if (t.suspended) { statusClass = 'badge-inactive'; statusText = 'Suspended'; }
+    else                  { statusClass = 'badge-active';   statusText = 'Active'; }
     const trafficCell = `
       <div style="min-width:130px">
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:${t.quota_gb?3:0}px">
@@ -286,7 +290,7 @@ function renderTokens(tokens) {
       </div>`;
     return `<tr>
       <td><strong>${esc(t.name)}</strong><br><span style="font-family:monospace;font-size:.75rem;color:#999">:${t.server_port}</span></td>
-      <td><span class="badge ${t.active?(overQuota?'badge-inactive':'badge-active'):'badge-inactive'}">${t.active?(overQuota?'Over Quota':'Active'):'Deleted'}</span></td>
+      <td><span class="badge ${statusClass}">${statusText}</span></td>
       <td>${trafficCell}</td>
       <td>${fmtDate(t.created_at)}</td>
       <td>${fmtDate(t.expires_at)}</td>
