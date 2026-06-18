@@ -33,6 +33,12 @@ MANAGER_ADDR=ssserver:6001
 - 订阅链接：`http://SERVER_ADDR/sub/<token>/clash.yaml`
 - Clash 节点里的 `server`
 
+生成 `ADMIN_SECRET`：
+
+```bash
+openssl rand -hex 32
+```
+
 ## 管理操作
 
 - 创建订阅：在管理界面填写名称，点击 `Create`，复制生成的订阅链接。
