@@ -26,7 +26,8 @@ PORT_START="${SS_USER_PORT_START:-40200}"
 PLACEHOLDER_PORT=$((PORT_START - 1))
 cat > config/config.json << EOF
 {
-    "manager_address": "udp://0.0.0.0:6001",
+    "manager_address": "0.0.0.0",
+    "manager_port": 6001,
     "server": "0.0.0.0",
     "server_port": ${PLACEHOLDER_PORT},
     "password": "placeholder-not-used",
