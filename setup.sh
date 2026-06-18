@@ -26,6 +26,8 @@ cat > config/config.json << EOF
 {
     "manager_address": "0.0.0.0:6001",
     "server": "0.0.0.0",
+    "server_port": 40199,
+    "password": "placeholder",
     "method": "${SS_CIPHER:-aes-256-gcm}",
     "mode": "tcp_and_udp",
     "fast_open": true,
