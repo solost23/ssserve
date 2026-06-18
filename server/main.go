@@ -109,6 +109,7 @@ func main() {
 	h := &handler{cfg: cfg, db: db, mgr: mgr, statBase: make(map[int]int64)}
 
 	h.syncToManager()
+	h.resetStatsBaseline()
 	go func() {
 		for range time.Tick(1 * time.Minute) {
 			h.pollStats()
@@ -148,18 +149,33 @@ func (h *handler) syncToManager() {
 		log.Printf("sync: list tokens: %v", err)
 		return
 	}
+	stats, err := h.mgr.Stats()
+	if err != nil {
+		log.Printf("sync: stats: %v", err)
+		return
+	}
+	added := 0
 	for _, t := range tokens {
+		if _, exists := stats[t.ServerPort]; exists {
+			continue
+		}
 		if err := h.mgr.AddServer(t.ServerPort, t.Password, h.cfg.Cipher); err != nil {
 			log.Printf("sync: add port %d: %v", t.ServerPort, err)
 			continue
 		}
+		added++
 	}
-	log.Printf("sync: registered %d active tokens", len(tokens))
+	log.Printf("sync: checked %d active tokens, added %d missing ports", len(tokens), added)
+}
+
+func (h *handler) resetStatsBaseline() {
 	if base, err := h.mgr.Stats(); err == nil {
 		h.statBaseMu.Lock()
 		h.statBase = base
 		h.statBaseMu.Unlock()
-		log.Printf("sync: baseline stats captured for %d ports", len(base))
+		log.Printf("stats: baseline captured for %d ports", len(base))
+	} else {
+		log.Printf("stats: baseline capture failed: %v", err)
 	}
 }
 
