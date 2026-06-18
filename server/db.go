@@ -25,9 +25,9 @@ type Token struct {
 }
 
 type Admin struct {
-	Username  string
-	IsOwner   bool
-	CreatedAt string
+	Username  string `json:"username"`
+	IsOwner   bool   `json:"is_owner"`
+	CreatedAt string `json:"created_at"`
 }
 
 var ErrNotFound = errors.New("not found")
@@ -73,21 +73,49 @@ func initDB(path string) (*DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	// migrations for existing installs
-	for _, col := range []string{
-		`ALTER TABLE tokens ADD COLUMN server_port INTEGER NOT NULL DEFAULT 0`,
-		`ALTER TABLE tokens ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now'))`,
-		`ALTER TABLE tokens ADD COLUMN deleted_at TEXT`,
-		`ALTER TABLE admins ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now'))`,
-		`ALTER TABLE admins ADD COLUMN deleted_at TEXT`,
-	} {
-		_, _ = db.Exec(col)
+	// migrations for existing installs — each is idempotent via PRAGMA check
+	if err := addColumnIfMissing(db, "tokens", "server_port", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return nil, err
+	}
+	if err := addColumnIfMissing(db, "tokens", "updated_at", "TEXT NOT NULL DEFAULT (datetime('now'))"); err != nil {
+		return nil, err
+	}
+	if err := addColumnIfMissing(db, "tokens", "deleted_at", "TEXT"); err != nil {
+		return nil, err
+	}
+	if err := addColumnIfMissing(db, "admins", "updated_at", "TEXT NOT NULL DEFAULT (datetime('now'))"); err != nil {
+		return nil, err
+	}
+	if err := addColumnIfMissing(db, "admins", "deleted_at", "TEXT"); err != nil {
+		return nil, err
 	}
 	return &DB{db: db}, nil
 }
 
 func (d *DB) Close() error {
 	return d.db.Close()
+}
+
+func addColumnIfMissing(db *sql.DB, table, column, definition string) error {
+	rows, err := db.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, colType string
+		var notNull, pk int
+		var dflt any
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &dflt, &pk); err != nil {
+			return err
+		}
+		if name == column {
+			return nil // already exists
+		}
+	}
+	_, err = db.Exec(`ALTER TABLE ` + table + ` ADD COLUMN ` + column + ` ` + definition)
+	return err
 }
 
 func now() string {
