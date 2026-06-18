@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -11,13 +12,16 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 type Config struct {
 	Domain        string
 	Cipher        string
 	NodeName      string
-	AdminSecret   string
+	AdminSecret   string // used only to seed the owner account on first run
+	JWTSecret     []byte
 	DBPath        string
 	ManagerAddr   string
 	UserPortStart int
@@ -25,17 +29,22 @@ type Config struct {
 
 func loadConfig() Config {
 	c := Config{
-		Domain:        os.Getenv("SS_DOMAIN"),
-		Cipher:        getEnvOr("SS_CIPHER", "aes-256-gcm"),
-		NodeName:      getEnvOr("SS_NAME", "Tokyo"),
-		AdminSecret:   os.Getenv("ADMIN_SECRET"),
-		DBPath:        getEnvOr("DB_PATH", "/data/sub.db"),
-		ManagerAddr:   getEnvOr("MANAGER_ADDR", "ssserver:6001"),
+		Domain:      os.Getenv("SS_DOMAIN"),
+		Cipher:      getEnvOr("SS_CIPHER", "aes-256-gcm"),
+		NodeName:    getEnvOr("SS_NAME", "Tokyo"),
+		AdminSecret: os.Getenv("ADMIN_SECRET"),
+		DBPath:      getEnvOr("DB_PATH", "/data/sub.db"),
+		ManagerAddr: getEnvOr("MANAGER_ADDR", "ssserver:6001"),
 		UserPortStart: 40200,
 	}
 	if v := os.Getenv("SS_USER_PORT_START"); v != "" {
 		fmt.Sscanf(v, "%d", &c.UserPortStart)
 	}
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		jwtSecret = c.AdminSecret // fall back to ADMIN_SECRET if not set
+	}
+	c.JWTSecret = []byte(jwtSecret)
 	if c.Domain == "" {
 		log.Fatal("SS_DOMAIN is required")
 	}
@@ -77,13 +86,18 @@ func main() {
 	}
 	defer db.Close()
 
+	// seed owner account on first run
+	if n, _ := db.AdminCount(); n == 0 {
+		if err := db.CreateAdmin("admin", cfg.AdminSecret, true); err != nil {
+			log.Fatalf("seed admin: %v", err)
+		}
+		log.Println("created owner account: admin")
+	}
+
 	mgr := NewManager(cfg.ManagerAddr)
 	h := &handler{cfg: cfg, db: db, mgr: mgr, statBase: make(map[int]int64)}
 
-	// sync active tokens to ssserver on startup
 	go h.syncToManager()
-
-	// poll traffic stats every 5 minutes, enforce quota
 	go func() {
 		for range time.Tick(5 * time.Minute) {
 			h.pollStats()
@@ -92,8 +106,11 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/sub/", h.handleSub)
-	mux.HandleFunc("/admin/tokens", h.adminAuth(h.handleTokens))
-	mux.HandleFunc("/admin/tokens/", h.adminAuth(h.handleTokenByID))
+	mux.HandleFunc("/admin/login", h.handleLogin)
+	mux.HandleFunc("/admin/tokens", h.jwtAuth(false, h.handleTokens))
+	mux.HandleFunc("/admin/tokens/", h.jwtAuth(false, h.handleTokenByID))
+	mux.HandleFunc("/admin/admins", h.jwtAuth(true, h.handleAdmins))
+	mux.HandleFunc("/admin/admins/", h.jwtAuth(true, h.handleAdminByID))
 
 	log.Println("listening on :8080")
 	if err := http.ListenAndServe(":8080", mux); err != nil {
@@ -106,11 +123,9 @@ type handler struct {
 	db         *DB
 	mgr        *Manager
 	statBaseMu sync.Mutex
-	statBase   map[int]int64 // baseline stats snapshot taken at subserver start
+	statBase   map[int]int64
 }
 
-// syncToManager re-registers all active tokens with ssserver.
-// Called on startup to recover from ssserver restarts.
 func (h *handler) syncToManager() {
 	tokens, err := h.db.ActiveTokens()
 	if err != nil {
@@ -124,7 +139,6 @@ func (h *handler) syncToManager() {
 	}
 	log.Printf("sync: registered %d active tokens", len(tokens))
 
-	// snapshot current ssmanager stats as baseline so we only count increments
 	if base, err := h.mgr.Stats(); err == nil {
 		h.statBaseMu.Lock()
 		h.statBase = base
@@ -155,12 +169,10 @@ func (h *handler) pollStats() {
 		return
 	}
 
-	// update baseline to current values
 	h.statBaseMu.Lock()
 	h.statBase = stats
 	h.statBaseMu.Unlock()
 
-	// enforce quota
 	tokens, err := h.db.ActiveTokens()
 	if err != nil {
 		return
@@ -176,19 +188,149 @@ func (h *handler) pollStats() {
 	}
 }
 
-func (h *handler) adminAuth(next http.HandlerFunc) http.HandlerFunc {
+// --- auth ---
+
+type claims struct {
+	Username string `json:"username"`
+	IsOwner  bool   `json:"is_owner"`
+	jwt.RegisteredClaims
+}
+
+func (h *handler) signJWT(username string, isOwner bool) (string, error) {
+	c := claims{
+		Username: username,
+		IsOwner:  isOwner,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+		},
+	}
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, c).SignedString(h.cfg.JWTSecret)
+}
+
+func (h *handler) parseJWT(r *http.Request) (*claims, error) {
+	auth := r.Header.Get("Authorization")
+	if !strings.HasPrefix(auth, "Bearer ") {
+		return nil, errors.New("missing token")
+	}
+	tok, err := jwt.ParseWithClaims(strings.TrimPrefix(auth, "Bearer "), &claims{},
+		func(t *jwt.Token) (any, error) {
+			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, errors.New("unexpected signing method")
+			}
+			return h.cfg.JWTSecret, nil
+		})
+	if err != nil || !tok.Valid {
+		return nil, errors.New("invalid token")
+	}
+	c, ok := tok.Claims.(*claims)
+	if !ok {
+		return nil, errors.New("invalid claims")
+	}
+	return c, nil
+}
+
+// jwtAuth middleware. ownerOnly=true requires is_owner claim.
+func (h *handler) jwtAuth(ownerOnly bool, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		secret := r.Header.Get("X-Admin-Secret")
-		if secret == "" {
-			secret = r.URL.Query().Get("secret")
-		}
-		if secret != h.cfg.AdminSecret {
+		c, err := h.parseJWT(r)
+		if err != nil {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if ownerOnly && !c.IsOwner {
+			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
 		next(w, r)
 	}
 }
+
+func (h *handler) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Username == "" || req.Password == "" {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	admin, err := h.db.VerifyAdmin(req.Username, req.Password)
+	if err != nil {
+		http.Error(w, "invalid credentials", http.StatusUnauthorized)
+		return
+	}
+	tok, err := h.signJWT(admin.Username, admin.IsOwner)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"token":    tok,
+		"username": admin.Username,
+		"is_owner": admin.IsOwner,
+	})
+}
+
+// --- admin management (owner only) ---
+
+func (h *handler) handleAdmins(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		admins, err := h.db.ListAdmins()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, admins)
+
+	case http.MethodPost:
+		var req struct {
+			Username string `json:"username"`
+			Password string `json:"password"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Username == "" || req.Password == "" {
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		if err := h.db.CreateAdmin(req.Username, req.Password, false); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (h *handler) handleAdminByID(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) != 3 {
+		http.NotFound(w, r)
+		return
+	}
+	username := parts[2]
+	if err := h.db.DeleteAdmin(username); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			http.Error(w, "not found or cannot delete owner", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- token management ---
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -239,6 +381,7 @@ func (h *handler) handleTokens(w http.ResponseWriter, r *http.Request) {
 			QuotaGB    *float64 `json:"quota_gb"`
 			UsedBytes  int64    `json:"used_bytes"`
 			CreatedAt  string   `json:"created_at"`
+			UpdatedAt  string   `json:"updated_at"`
 			ExpiresAt  *string  `json:"expires_at"`
 			Active     bool     `json:"active"`
 		}
@@ -253,6 +396,7 @@ func (h *handler) handleTokens(w http.ResponseWriter, r *http.Request) {
 				QuotaGB:    t.QuotaGB,
 				UsedBytes:  t.UsedBytes,
 				CreatedAt:  t.CreatedAt,
+				UpdatedAt:  t.UpdatedAt,
 				ExpiresAt:  t.ExpiresAt,
 				Active:     t.Active,
 			}
@@ -315,7 +459,7 @@ func (h *handler) handleTokenByID(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPatch:
 		var req struct {
-			QuotaGB *float64 `json:"quota_gb"` // null = unlimited
+			QuotaGB *float64 `json:"quota_gb"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid request", http.StatusBadRequest)
@@ -325,24 +469,26 @@ func (h *handler) handleTokenByID(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		// re-register port if quota was raised or removed (port may have been taken down)
 		if t, err := h.db.GetActiveToken(token); err == nil {
 			_ = h.mgr.AddServer(t.ServerPort, t.Password, h.cfg.Cipher)
 		}
 		w.WriteHeader(http.StatusNoContent)
 
 	case http.MethodDelete:
-		t, err := h.db.GetActiveToken(token)
+		// try active token first for port cleanup, fall back to any token for hard delete
+		t, err := h.db.GetToken(token)
 		if err != nil {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
-		if err := h.db.RevokeToken(token); err != nil {
+		if t.Active {
+			if err := h.mgr.RemoveServer(t.ServerPort); err != nil {
+				log.Printf("warn: remove port %d: %v", t.ServerPort, err)
+			}
+		}
+		if err := h.db.DeleteToken(token); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
-		}
-		if err := h.mgr.RemoveServer(t.ServerPort); err != nil {
-			log.Printf("warn: remove port %d: %v", t.ServerPort, err)
 		}
 		w.WriteHeader(http.StatusNoContent)
 

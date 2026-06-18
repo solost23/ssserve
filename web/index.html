@@ -7,8 +7,8 @@
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: system-ui, -apple-system, sans-serif; background: #f5f5f5; color: #333; min-height: 100vh; }
-  .container { max-width: 900px; margin: 0 auto; padding: 24px 16px; }
-  h1 { font-size: 1.4rem; font-weight: 600; margin-bottom: 24px; color: #111; }
+  .container { max-width: 960px; margin: 0 auto; padding: 24px 16px; }
+  h1 { font-size: 1.4rem; font-weight: 600; color: #111; }
   h2 { font-size: 1rem; font-weight: 600; margin-bottom: 12px; color: #333; }
 
   #login-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
@@ -51,7 +51,6 @@
   .badge-inactive { background: #fee2e2; color: #dc2626; }
 
   .sub-url { font-family: monospace; font-size: .78rem; color: #555; word-break: break-all; }
-  .copy-btn { white-space: nowrap; }
 
   .toast {
     position: fixed; bottom: 24px; right: 24px; background: #111; color: white;
@@ -63,6 +62,13 @@
   .error { color: #dc2626; font-size: .85rem; margin-top: 8px; }
   #main-screen { display: none; }
   .header-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+  .header-actions { display: flex; align-items: center; gap: 8px; }
+  .user-label { font-size: .85rem; color: #555; }
+  .tab-nav { display: flex; gap: 4px; margin-bottom: 16px; }
+  .tab-btn { background: transparent; color: #555; border-bottom: 2px solid transparent; border-radius: 0; padding: 6px 12px; }
+  .tab-btn.active { color: #2563eb; border-bottom-color: #2563eb; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
 </style>
 </head>
 <body>
@@ -71,8 +77,12 @@
   <div class="login-box">
     <h1>Subscription Manager</h1>
     <div class="form-group">
-      <label>Admin Secret</label>
-      <input type="password" id="secret-input" placeholder="Enter admin secret" autocomplete="current-password">
+      <label>Username</label>
+      <input type="text" id="login-username" placeholder="admin" autocomplete="username">
+    </div>
+    <div class="form-group">
+      <label>Password</label>
+      <input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password">
     </div>
     <button class="btn-primary btn-full" onclick="login()">Login</button>
     <div id="login-error" class="error"></div>
@@ -83,38 +93,47 @@
   <div class="container">
     <div class="header-row">
       <h1>Subscription Manager</h1>
-      <button class="btn-ghost" onclick="logout()">Logout</button>
-    </div>
-
-    <div class="card">
-      <h2>Create Token</h2>
-      <div class="create-form">
-        <div class="form-group" style="margin:0">
-          <label>Name</label>
-          <input type="text" id="new-name" placeholder="e.g. iPhone">
-        </div>
-        <div class="form-group" style="margin:0">
-          <label>Quota (GB, optional)</label>
-          <input type="number" id="new-quota" placeholder="unlimited" min="1">
-        </div>
-        <div class="form-group" style="margin:0">
-          <label>Expires (days, optional)</label>
-          <input type="number" id="new-expires" placeholder="never" min="1">
-        </div>
-        <button class="btn-primary" onclick="createToken()">Create</button>
+      <div class="header-actions">
+        <span class="user-label" id="current-user"></span>
+        <button class="btn-ghost" onclick="logout()">Logout</button>
       </div>
-      <div id="create-error" class="error"></div>
     </div>
 
-    <div class="card">
-      <h2>Tokens</h2>
-      <div id="token-table-wrap">
+    <div class="tab-nav" id="tab-nav">
+      <button class="tab-btn active" onclick="switchTab('tokens')">Tokens</button>
+      <button class="tab-btn" id="tab-admins-btn" onclick="switchTab('admins')" style="display:none">Admins</button>
+    </div>
+
+    <!-- Tokens tab -->
+    <div class="tab-panel active" id="tab-tokens">
+      <div class="card">
+        <h2>Create Token</h2>
+        <div class="create-form">
+          <div class="form-group" style="margin:0">
+            <label>Name</label>
+            <input type="text" id="new-name" placeholder="e.g. iPhone">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>Quota (GB, optional)</label>
+            <input type="number" id="new-quota" placeholder="unlimited" min="1">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>Expires (days, optional)</label>
+            <input type="number" id="new-expires" placeholder="never" min="1">
+          </div>
+          <button class="btn-primary" onclick="createToken()">Create</button>
+        </div>
+        <div id="create-error" class="error"></div>
+      </div>
+
+      <div class="card">
+        <h2>Tokens</h2>
         <table>
           <thead>
             <tr>
               <th>Name</th>
               <th>Status</th>
-              <th>Quota</th>
+              <th>Traffic</th>
               <th>Created</th>
               <th>Expires</th>
               <th>Subscription URL</th>
@@ -125,60 +144,114 @@
         </table>
       </div>
     </div>
+
+    <!-- Admins tab (owner only) -->
+    <div class="tab-panel" id="tab-admins">
+      <div class="card">
+        <h2>Add Admin</h2>
+        <div class="create-form">
+          <div class="form-group" style="margin:0">
+            <label>Username</label>
+            <input type="text" id="new-admin-user" placeholder="username">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>Password</label>
+            <input type="password" id="new-admin-pass" placeholder="password">
+          </div>
+          <div></div>
+          <button class="btn-primary" onclick="createAdmin()">Add</button>
+        </div>
+        <div id="admin-create-error" class="error"></div>
+      </div>
+
+      <div class="card">
+        <h2>Admins</h2>
+        <table>
+          <thead>
+            <tr><th>Username</th><th>Role</th><th>Created</th><th></th></tr>
+          </thead>
+          <tbody id="admin-tbody"></tbody>
+        </table>
+      </div>
+    </div>
   </div>
 </div>
 
 <div class="toast" id="toast"></div>
 
 <script>
-const API = '';
+let jwtToken = '';
+let isOwner = false;
+let currentUser = '';
 
-function getSecret() { return localStorage.getItem('admin_secret') || ''; }
+function getJWT() { return localStorage.getItem('jwt') || ''; }
+function setJWT(t) { localStorage.setItem('jwt', t); jwtToken = t; }
+function clearJWT() { localStorage.removeItem('jwt'); localStorage.removeItem('jwt_user'); localStorage.removeItem('jwt_owner'); jwtToken = ''; }
 
 function apiFetch(path, opts = {}) {
-  return fetch(API + path, {
+  return fetch(path, {
     ...opts,
     headers: {
       'Content-Type': 'application/json',
-      'X-Admin-Secret': getSecret(),
+      'Authorization': 'Bearer ' + getJWT(),
       ...(opts.headers || {}),
     },
   });
 }
 
 async function login() {
-  const secret = document.getElementById('secret-input').value.trim();
-  if (!secret) return;
-  localStorage.setItem('admin_secret', secret);
-  const res = await fetch('/admin/tokens', {
-    headers: { 'X-Admin-Secret': secret },
+  const username = document.getElementById('login-username').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errEl = document.getElementById('login-error');
+  errEl.textContent = '';
+  if (!username || !password) { errEl.textContent = 'Enter username and password.'; return; }
+
+  const res = await fetch('/admin/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
   });
-  if (res.status === 401) {
-    document.getElementById('login-error').textContent = 'Invalid secret.';
-    localStorage.removeItem('admin_secret');
-    return;
-  }
+  if (!res.ok) { errEl.textContent = 'Invalid credentials.'; return; }
+
+  const data = await res.json();
+  setJWT(data.token);
+  localStorage.setItem('jwt_user', data.username);
+  localStorage.setItem('jwt_owner', data.is_owner ? '1' : '0');
+  isOwner = data.is_owner;
+  currentUser = data.username;
   showMain();
   loadTokens();
+  if (isOwner) loadAdmins();
 }
 
 function logout() {
-  localStorage.removeItem('admin_secret');
+  clearJWT();
   document.getElementById('main-screen').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
-  document.getElementById('secret-input').value = '';
+  document.getElementById('login-password').value = '';
 }
 
 function showMain() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('main-screen').style.display = 'block';
+  document.getElementById('current-user').textContent = currentUser;
+  document.getElementById('tab-admins-btn').style.display = isOwner ? '' : 'none';
 }
+
+function switchTab(name) {
+  document.querySelectorAll('.tab-panel').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  event.target.classList.add('active');
+}
+
+// --- tokens ---
 
 async function loadTokens() {
   const res = await apiFetch('/admin/tokens');
+  if (res.status === 401) { logout(); return; }
   if (!res.ok) return;
-  const tokens = await res.json();
-  renderTokens(tokens || []);
+  renderTokens((await res.json()) || []);
 }
 
 function fmtBytes(bytes) {
@@ -189,10 +262,7 @@ function fmtBytes(bytes) {
   return v.toFixed(1) + ' ' + units[i];
 }
 
-function fmtDate(s) {
-  if (!s) return '—';
-  return s.slice(0, 10);
-}
+function fmtDate(s) { return s ? s.slice(0, 10) : '—'; }
 
 function renderTokens(tokens) {
   const tbody = document.getElementById('token-tbody');
@@ -201,46 +271,39 @@ function renderTokens(tokens) {
     return;
   }
   tbody.innerHTML = tokens.map(t => {
-    const usedPct = t.quota_gb ? Math.min(100, t.used_bytes / (t.quota_gb * 1e9) * 100) : 0;
     const overQuota = t.quota_gb && t.used_bytes >= t.quota_gb * 1e9;
     const quotaLabel = t.quota_gb ? `${t.quota_gb} GB` : '∞';
+    const usedPct = t.quota_gb ? Math.min(100, t.used_bytes / (t.quota_gb * 1e9) * 100) : 0;
     const trafficCell = `
       <div style="min-width:130px">
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:${t.quota_gb ? 3 : 0}px">
-          <span style="font-size:.8rem">${fmtBytes(t.used_bytes)} / <span id="quota-label-${t.token}">${quotaLabel}</span></span>
-          ${t.active ? `<button class="btn-ghost" style="padding:1px 5px;font-size:.72rem" onclick="editQuota('${t.token}', ${t.quota_gb ?? 'null'})">edit</button>` : ''}
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:${t.quota_gb?3:0}px">
+          <span style="font-size:.8rem">${fmtBytes(t.used_bytes)} / ${quotaLabel}</span>
+          ${t.active ? `<button class="btn-ghost" style="padding:1px 5px;font-size:.72rem" onclick="editQuota('${t.token}',${t.quota_gb??'null'})">edit</button>` : ''}
         </div>
         ${t.quota_gb ? `<div style="height:4px;background:#e5e7eb;border-radius:2px">
           <div style="height:4px;width:${usedPct}%;background:${overQuota?'#dc2626':'#2563eb'};border-radius:2px"></div>
         </div>` : ''}
       </div>`;
-    return `
-    <tr>
+    return `<tr>
       <td><strong>${esc(t.name)}</strong><br><span style="font-family:monospace;font-size:.75rem;color:#999">:${t.server_port}</span></td>
-      <td><span class="badge ${t.active ? (overQuota ? 'badge-inactive' : 'badge-active') : 'badge-inactive'}">${t.active ? (overQuota ? 'Over Quota' : 'Active') : 'Revoked'}</span></td>
+      <td><span class="badge ${t.active?(overQuota?'badge-inactive':'badge-active'):'badge-inactive'}">${t.active?(overQuota?'Over Quota':'Active'):'Deleted'}</span></td>
       <td>${trafficCell}</td>
       <td>${fmtDate(t.created_at)}</td>
       <td>${fmtDate(t.expires_at)}</td>
       <td><span class="sub-url">${esc(t.sub_url)}</span></td>
       <td style="white-space:nowrap">
-        <button class="btn-ghost copy-btn" onclick="copyURL('${esc(t.sub_url)}')">Copy</button>
-        ${t.active ? `<button class="btn-danger" style="padding:4px 10px;font-size:.8rem" onclick="revokeToken('${t.token}')">Revoke</button>` : ''}
+        <button class="btn-ghost" onclick="copyURL('${esc(t.sub_url)}')">Copy</button>
+        <button class="btn-danger" style="padding:4px 10px;font-size:.8rem" onclick="deleteToken('${t.token}')">Delete</button>
       </td>
-    </tr>
-  `}).join('');
+    </tr>`;
+  }).join('');
 }
 
 async function editQuota(token, current) {
-  const val = prompt(
-    'Set quota in GB (leave empty for unlimited):',
-    current != null ? String(current) : ''
-  );
-  if (val === null) return; // cancelled
+  const val = prompt('Set quota in GB (leave empty for unlimited):', current != null ? String(current) : '');
+  if (val === null) return;
   const quotaGB = val.trim() === '' ? null : parseFloat(val);
-  if (quotaGB !== null && (isNaN(quotaGB) || quotaGB <= 0)) {
-    toast('Invalid quota value.');
-    return;
-  }
+  if (quotaGB !== null && (isNaN(quotaGB) || quotaGB <= 0)) { toast('Invalid quota value.'); return; }
   const res = await apiFetch('/admin/tokens/' + token, {
     method: 'PATCH',
     body: JSON.stringify({ quota_gb: quotaGB }),
@@ -256,7 +319,6 @@ async function createToken() {
   const expires = document.getElementById('new-expires').value;
   const errEl = document.getElementById('create-error');
   errEl.textContent = '';
-
   if (!name) { errEl.textContent = 'Name is required.'; return; }
 
   const body = { name };
@@ -265,31 +327,81 @@ async function createToken() {
 
   const res = await apiFetch('/admin/tokens', { method: 'POST', body: JSON.stringify(body) });
   if (!res.ok) { errEl.textContent = 'Failed to create token.'; return; }
-
   const data = await res.json();
   document.getElementById('new-name').value = '';
   document.getElementById('new-quota').value = '';
   document.getElementById('new-expires').value = '';
-  toast('Created. URL copied to clipboard.');
+  toast('Created! URL copied.');
   copyURL(data.sub_url);
   loadTokens();
 }
 
-async function revokeToken(token) {
-  if (!confirm('Revoke this token? The subscription will stop working immediately.')) return;
+async function deleteToken(token) {
+  if (!confirm('Delete this token? The subscription will stop working immediately.')) return;
   const res = await apiFetch('/admin/tokens/' + token, { method: 'DELETE' });
-  if (!res.ok) { toast('Failed to revoke.'); return; }
-  toast('Revoked.');
+  if (!res.ok) { toast('Failed to delete.'); return; }
+  toast('Deleted.');
   loadTokens();
 }
 
-function copyURL(url) {
-  navigator.clipboard.writeText(url).then(() => toast('Copied!')).catch(() => {
-    const el = document.createElement('textarea');
-    el.value = url; document.body.appendChild(el); el.select();
-    document.execCommand('copy'); document.body.removeChild(el);
-    toast('Copied!');
+// --- admins (owner only) ---
+
+async function loadAdmins() {
+  const res = await apiFetch('/admin/admins');
+  if (!res.ok) return;
+  renderAdmins((await res.json()) || []);
+}
+
+function renderAdmins(admins) {
+  const tbody = document.getElementById('admin-tbody');
+  if (!admins.length) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#999;padding:24px">No admins</td></tr>';
+    return;
+  }
+  tbody.innerHTML = admins.map(a => `<tr>
+    <td>${esc(a.username)}</td>
+    <td><span class="badge ${a.is_owner?'badge-active':'badge-inactive'}">${a.is_owner?'Owner':'Admin'}</span></td>
+    <td>${fmtDate(a.created_at)}</td>
+    <td>${a.is_owner ? '' : `<button class="btn-danger" style="padding:4px 10px;font-size:.8rem" onclick="deleteAdmin('${esc(a.username)}')">Delete</button>`}</td>
+  </tr>`).join('');
+}
+
+async function createAdmin() {
+  const username = document.getElementById('new-admin-user').value.trim();
+  const password = document.getElementById('new-admin-pass').value;
+  const errEl = document.getElementById('admin-create-error');
+  errEl.textContent = '';
+  if (!username || !password) { errEl.textContent = 'Username and password are required.'; return; }
+  const res = await apiFetch('/admin/admins', {
+    method: 'POST',
+    body: JSON.stringify({ username, password }),
   });
+  if (!res.ok) { errEl.textContent = 'Failed to create admin.'; return; }
+  document.getElementById('new-admin-user').value = '';
+  document.getElementById('new-admin-pass').value = '';
+  toast('Admin created.');
+  loadAdmins();
+}
+
+async function deleteAdmin(username) {
+  if (!confirm(`Delete admin "${username}"?`)) return;
+  const res = await apiFetch('/admin/admins/' + encodeURIComponent(username), { method: 'DELETE' });
+  if (!res.ok) { toast('Failed to delete admin.'); return; }
+  toast('Admin deleted.');
+  loadAdmins();
+}
+
+// --- utils ---
+
+function copyURL(url) {
+  navigator.clipboard.writeText(url)
+    .then(() => toast('Copied!'))
+    .catch(() => {
+      const el = document.createElement('textarea');
+      el.value = url; document.body.appendChild(el); el.select();
+      document.execCommand('copy'); document.body.removeChild(el);
+      toast('Copied!');
+    });
 }
 
 function esc(s) {
@@ -304,13 +416,19 @@ function toast(msg) {
   toastTimer = setTimeout(() => el.classList.remove('show'), 2500);
 }
 
-document.getElementById('secret-input').addEventListener('keydown', e => {
-  if (e.key === 'Enter') login();
+['login-username', 'login-password'].forEach(id => {
+  document.getElementById(id).addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
 });
 
-if (getSecret()) {
+// auto-restore session
+const savedJWT = getJWT();
+if (savedJWT) {
+  jwtToken = savedJWT;
+  currentUser = localStorage.getItem('jwt_user') || '';
+  isOwner = localStorage.getItem('jwt_owner') === '1';
   showMain();
   loadTokens();
+  if (isOwner) loadAdmins();
 }
 </script>
 </body>
