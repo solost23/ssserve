@@ -21,8 +21,22 @@ fi
 sed "s|example.com|${SS_DOMAIN}|g" config/nginx.example.conf > config/nginx.conf
 sed "s|example.com|${SS_DOMAIN}|g" config/nginx.bootstrap.example.conf > config/nginx.bootstrap.conf
 
-# ssserver config (manager mode; users are managed dynamically by subserver)
-cp config/config.example.json config/config.json
+# ssserver config (manager mode; placeholder server required for startup)
+PORT_START="${SS_USER_PORT_START:-40200}"
+PLACEHOLDER_PORT=$((PORT_START - 1))
+cat > config/config.json << EOF
+{
+    "manager_address": "0.0.0.0:6001",
+    "server": "0.0.0.0",
+    "server_port": ${PLACEHOLDER_PORT},
+    "password": "placeholder-not-used",
+    "method": "${SS_CIPHER:-aes-256-gcm}",
+    "mode": "tcp_and_udp",
+    "fast_open": true,
+    "no_delay": true,
+    "keep_alive": 15
+}
+EOF
 
 mkdir -p data logs/nginx
 
