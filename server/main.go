@@ -2,12 +2,14 @@ package main
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -63,6 +65,11 @@ func getEnvOr(key, def string) string {
 
 func (c Config) SubURL(token string) string {
 	return fmt.Sprintf("http://%s/sub/%s/clash.yaml", c.ServerAddr, token)
+}
+
+func (c Config) SSURL(password string, port int) string {
+	userInfo := fmt.Sprintf("%s:%s@%s:%d", c.Cipher, password, c.ServerAddr, port)
+	return fmt.Sprintf("ss://%s#%s", base64.RawURLEncoding.EncodeToString([]byte(userInfo)), url.QueryEscape(c.NodeName))
 }
 
 func generateToken() (string, error) {
@@ -394,6 +401,8 @@ func (h *handler) handleTokens(w http.ResponseWriter, r *http.Request) {
 			Name       string   `json:"name"`
 			Token      string   `json:"token"`
 			SubURL     string   `json:"sub_url"`
+			ClashURL   string   `json:"clash_url"`
+			SSURL      string   `json:"ss_url"`
 			ServerPort int      `json:"server_port"`
 			QuotaGB    *float64 `json:"quota_gb"`
 			UsedBytes  int64    `json:"used_bytes"`
@@ -410,6 +419,8 @@ func (h *handler) handleTokens(w http.ResponseWriter, r *http.Request) {
 				Name:       t.Name,
 				Token:      t.Token,
 				SubURL:     h.cfg.SubURL(t.Token),
+				ClashURL:   h.cfg.SubURL(t.Token),
+				SSURL:      h.cfg.SSURL(t.Password, t.ServerPort),
 				ServerPort: t.ServerPort,
 				QuotaGB:    t.QuotaGB,
 				UsedBytes:  t.UsedBytes,
@@ -472,6 +483,8 @@ func (h *handler) handleTokens(w http.ResponseWriter, r *http.Request) {
 			"token":       t.Token,
 			"server_port": t.ServerPort,
 			"sub_url":     h.cfg.SubURL(t.Token),
+			"clash_url":   h.cfg.SubURL(t.Token),
+			"ss_url":      h.cfg.SSURL(t.Password, t.ServerPort),
 		})
 
 	default:

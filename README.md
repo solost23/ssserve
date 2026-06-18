@@ -41,7 +41,10 @@ openssl rand -hex 32
 
 ## 管理操作
 
-- 创建订阅：在管理界面填写名称，点击 `Create`，复制生成的订阅链接。
+- 创建订阅：在管理界面填写名称，点击 `Create`。
+- 电脑 Clash 使用 `Clash` 链接。
+- 手机 Shadowsocks 使用 `SS` 链接。
+- 链接不存数据库，会根据 token、密码、端口和 `SERVER_ADDR` 动态生成。
 - 吊销订阅：点击 `Revoke`，订阅立即失效。
 - 查看流量：管理界面会显示每个 token 的已用流量和配额进度。
 

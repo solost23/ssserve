@@ -51,6 +51,10 @@
   .badge-inactive { background: #fee2e2; color: #dc2626; }
 
   .sub-url { font-family: monospace; font-size: .78rem; color: #555; word-break: break-all; }
+  .link-stack { display: grid; gap: 4px; }
+  .link-row { display: flex; align-items: center; gap: 8px; }
+  .link-label { font-size: .72rem; color: #777; text-transform: uppercase; letter-spacing: .02em; min-width: 54px; }
+  .link-value { flex: 1; font-family: monospace; font-size: .78rem; color: #555; word-break: break-all; }
 
   .toast {
     position: fixed; bottom: 24px; right: 24px; background: #111; color: white;
@@ -294,9 +298,21 @@ function renderTokens(tokens) {
       <td>${trafficCell}</td>
       <td>${fmtDate(t.created_at)}</td>
       <td>${fmtDate(t.expires_at)}</td>
-      <td><span class="sub-url">${esc(t.sub_url)}</span></td>
+      <td>
+        <div class="link-stack">
+          <div class="link-row">
+            <span class="link-label">Clash</span>
+            <span class="link-value">${esc(t.clash_url || t.sub_url)}</span>
+            <button class="btn-ghost" onclick="copyURL('${esc(t.clash_url || t.sub_url)}')">Copy</button>
+          </div>
+          <div class="link-row">
+            <span class="link-label">SS</span>
+            <span class="link-value">${esc(t.ss_url || '')}</span>
+            <button class="btn-ghost" onclick="copyURL('${esc(t.ss_url || '')}')">Copy</button>
+          </div>
+        </div>
+      </td>
       <td style="white-space:nowrap">
-        <button class="btn-ghost" onclick="copyURL('${esc(t.sub_url)}')">Copy</button>
         <button class="btn-danger" style="padding:4px 10px;font-size:.8rem" onclick="deleteToken('${t.token}')">Delete</button>
       </td>
     </tr>`;
@@ -336,7 +352,7 @@ async function createToken() {
   document.getElementById('new-quota').value = '';
   document.getElementById('new-expires').value = '';
   toast('Created! URL copied.');
-  copyURL(data.sub_url);
+  copyURL(data.clash_url || data.sub_url);
   loadTokens();
 }
 
