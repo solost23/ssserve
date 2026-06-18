@@ -16,4 +16,4 @@ FROM alpine:latest
 RUN apk add --no-cache ca-certificates
 COPY --from=downloader /usr/local/bin/ssmanager /usr/local/bin/ssmanager
 ENTRYPOINT ["ssmanager"]
-CMD ["-c", "/etc/shadowsocks-rust/config.json"]
+CMD ["-c", "/etc/shadowsocks-rust/config.json", "--manager-address", "0.0.0.0:6001"]
