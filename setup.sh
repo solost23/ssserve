@@ -27,7 +27,7 @@ cat > config/config.json << EOF
     "server": "0.0.0.0",
     "server_port": 40199,
     "password": "placeholder",
-    "method": "${SS_CIPHER:-aes-256-gcm}",
+    "method": "${SS_CIPHER:-chacha20-ietf-poly1305}",
     "mode": "tcp_and_udp",
     "fast_open": true,
     "no_delay": true,

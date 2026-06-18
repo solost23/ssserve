@@ -32,7 +32,7 @@ type Config struct {
 func loadConfig() Config {
 	c := Config{
 		ServerAddr:    strings.TrimRight(os.Getenv("SERVER_ADDR"), "/"),
-		Cipher:        getEnvOr("SS_CIPHER", "aes-256-gcm"),
+		Cipher:        getEnvOr("SS_CIPHER", "chacha20-ietf-poly1305"),
 		NodeName:      getEnvOr("SS_NAME", "Tokyo"),
 		AdminSecret:   os.Getenv("ADMIN_SECRET"),
 		DBPath:        getEnvOr("DB_PATH", "/data/sub.db"),

@@ -20,7 +20,7 @@ docker compose up -d --build
 
 ```env
 SERVER_ADDR=38.47.105.9
-SS_CIPHER=aes-256-gcm
+SS_CIPHER=chacha20-ietf-poly1305
 SS_NAME=Tokyo
 SS_USER_PORT_START=40200
 ADMIN_SECRET=replace-with-a-long-random-secret
