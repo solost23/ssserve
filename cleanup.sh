@@ -2,7 +2,6 @@
 # Remove all generated runtime files so setup.sh can start fresh.
 
 rm -f config/nginx.conf
-rm -f config/nginx.bootstrap.conf
 rm -f config/config.json
 
 if [ "$1" = "--with-db" ]; then

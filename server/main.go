@@ -17,8 +17,7 @@ import (
 )
 
 type Config struct {
-	Domain        string
-	SubBaseURL    string
+	ServerAddr    string
 	Cipher        string
 	NodeName      string
 	AdminSecret   string // used only to seed the owner account on first run
@@ -30,8 +29,7 @@ type Config struct {
 
 func loadConfig() Config {
 	c := Config{
-		Domain:        os.Getenv("SS_DOMAIN"),
-		SubBaseURL:    strings.TrimRight(os.Getenv("SUB_BASE_URL"), "/"),
+		ServerAddr:    strings.TrimRight(os.Getenv("SERVER_ADDR"), "/"),
 		Cipher:        getEnvOr("SS_CIPHER", "aes-256-gcm"),
 		NodeName:      getEnvOr("SS_NAME", "Tokyo"),
 		AdminSecret:   os.Getenv("ADMIN_SECRET"),
@@ -47,11 +45,8 @@ func loadConfig() Config {
 		jwtSecret = c.AdminSecret // fall back to ADMIN_SECRET if not set
 	}
 	c.JWTSecret = []byte(jwtSecret)
-	if c.Domain == "" {
-		log.Fatal("SS_DOMAIN is required")
-	}
-	if c.SubBaseURL == "" {
-		c.SubBaseURL = "https://" + c.Domain
+	if c.ServerAddr == "" {
+		log.Fatal("SERVER_ADDR is required")
 	}
 	if c.AdminSecret == "" {
 		log.Fatal("ADMIN_SECRET is required")
@@ -67,7 +62,7 @@ func getEnvOr(key, def string) string {
 }
 
 func (c Config) SubURL(token string) string {
-	return fmt.Sprintf("%s/sub/%s/clash.yaml", c.SubBaseURL, token)
+	return fmt.Sprintf("http://%s/sub/%s/clash.yaml", c.ServerAddr, token)
 }
 
 func generateToken() (string, error) {

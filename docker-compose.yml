@@ -5,24 +5,12 @@ services:
       restart: always
       ports:
         - "80:80"
-        - "443:443"
       volumes:
         - ./config/${NGINX_CONF:-nginx.conf}:/etc/nginx/conf.d/default.conf:ro
         - ./web:/etc/nginx/web:ro
-        - ./certbot/www:/var/www/certbot:ro
-        - ./certbot/conf:/etc/letsencrypt:ro
         - ./logs/nginx:/var/log/nginx
       depends_on:
         - subserver
-
-    certbot:
-      image: certbot/certbot
-      container_name: certbot
-      restart: unless-stopped
-      volumes:
-        - ./certbot/www:/var/www/certbot
-        - ./certbot/conf:/etc/letsencrypt
-      entrypoint: /bin/sh -c "trap exit TERM; while :; do certbot renew --quiet; sleep 12h & wait $${!}; done"
 
     ssserver:
       build: ./ssmanager
@@ -58,8 +46,7 @@ services:
       container_name: subserver
       restart: always
       environment:
-        SS_DOMAIN: ${SS_DOMAIN}
-        SUB_BASE_URL: ${SUB_BASE_URL:-}
+        SERVER_ADDR: ${SERVER_ADDR}
         SS_CIPHER: ${SS_CIPHER:-aes-256-gcm}
         SS_NAME: ${SS_NAME:-Tokyo}
         SS_USER_PORT_START: ${SS_USER_PORT_START:-40200}

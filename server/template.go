@@ -27,5 +27,5 @@ proxy-groups:
 rules:
   - GEOIP,CN,DIRECT
   - MATCH,Proxy
-`, cfg.NodeName, cfg.Domain, port, cfg.Cipher, password, cfg.NodeName)
+`, cfg.NodeName, cfg.ServerAddr, port, cfg.Cipher, password, cfg.NodeName)
 }
