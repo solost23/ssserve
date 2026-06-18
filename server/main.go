@@ -108,10 +108,15 @@ func main() {
 	mgr := NewManager(cfg.ManagerAddr)
 	h := &handler{cfg: cfg, db: db, mgr: mgr, statBase: make(map[int]int64)}
 
-	go h.syncToManager()
+	h.syncToManager()
 	go func() {
 		for range time.Tick(5 * time.Minute) {
 			h.pollStats()
+		}
+	}()
+	go func() {
+		for range time.Tick(30 * time.Second) {
+			h.syncToManager()
 		}
 	}()
 
@@ -140,11 +145,13 @@ type handler struct {
 func (h *handler) syncToManager() {
 	tokens, err := h.db.ActiveTokens()
 	if err != nil {
-		log.Fatalf("sync: list tokens: %v", err)
+		log.Printf("sync: list tokens: %v", err)
+		return
 	}
 	for _, t := range tokens {
 		if err := h.mgr.AddServer(t.ServerPort, t.Password, h.cfg.Cipher); err != nil {
-			log.Fatalf("sync: add port %d: %v", t.ServerPort, err)
+			log.Printf("sync: add port %d: %v", t.ServerPort, err)
+			continue
 		}
 	}
 	log.Printf("sync: registered %d active tokens", len(tokens))
