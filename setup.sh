@@ -12,37 +12,27 @@ if [ -z "$SS_DOMAIN" ] || [ "$SS_DOMAIN" = "example.com" ]; then
     echo "Error: SS_DOMAIN is not set in .env"
     exit 1
 fi
-if [ -z "$SS_PASSWORD" ] || [ "$SS_PASSWORD" = "replace-with-a-long-random-password" ]; then
-    echo "Error: SS_PASSWORD is not set in .env"
+if [ -z "$ADMIN_SECRET" ] || [ "$ADMIN_SECRET" = "replace-with-a-long-random-secret" ]; then
+    echo "Error: ADMIN_SECRET is not set in .env"
     exit 1
 fi
-
-SS_PORT="${SS_PORT:-40105}"
 
 # nginx configs
 sed "s|example.com|${SS_DOMAIN}|g" config/nginx.example.conf > config/nginx.conf
 sed "s|example.com|${SS_DOMAIN}|g" config/nginx.bootstrap.example.conf > config/nginx.bootstrap.conf
 
-# ssserver config
-sed "s|replace-with-a-long-random-password|${SS_PASSWORD}|g" config/config.example.json \
-    | sed "s|40105|${SS_PORT}|g" > config/config.json
+# ssserver config (manager mode; users are managed dynamically by subserver)
+cp config/config.example.json config/config.json
 
-# subscribe
-HASH=$(openssl rand -hex 16)
-mkdir -p "config/subscribe/${HASH}"
-sed \
-    -e "s|example.com|${SS_DOMAIN}|g" \
-    -e "s|40105|${SS_PORT}|g" \
-    -e "s|replace-with-a-long-random-password|${SS_PASSWORD}|g" \
-    config/subscribe/clash.example.yaml > "config/subscribe/${HASH}/clash.yaml"
+mkdir -p data logs/nginx
 
 echo ""
 echo "Config generated successfully."
-echo ""
-echo "Subscription URL:"
-echo "  https://${SS_DOMAIN}/sub/${HASH}/clash.yaml"
 echo ""
 echo "Next steps:"
 echo "  1. Bootstrap cert:  NGINX_CONF=nginx.bootstrap.conf docker compose up -d nginx"
 echo "  2. Get cert:        docker compose run --rm --entrypoint certbot certbot certonly --webroot -w /var/www/certbot -d ${SS_DOMAIN}"
 echo "  3. Start all:       docker compose up -d"
+echo ""
+echo "Admin UI: https://${SS_DOMAIN}/"
+echo "Login with ADMIN_SECRET from your .env"

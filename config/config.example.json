@@ -1,17 +1,7 @@
 {
-    "server": "0.0.0.0",
-    "server_port": 40105,
-    "method": "aes-256-gcm",
-    "password": "replace-with-a-long-random-password",
+    "manager_address": "0.0.0.0:6001",
     "mode": "tcp_and_udp",
     "fast_open": true,
     "no_delay": true,
-    "keep_alive": 15,
-    "nofile": 65535,
-    "log": {
-        "level": 1
-    },
-    "runtime": {
-        "mode": "multi_thread"
-    }
+    "keep_alive": 15
 }
