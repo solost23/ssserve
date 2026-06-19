@@ -16,13 +16,17 @@ func NewManager(addr string) *Manager {
 	return &Manager{addr: addr}
 }
 
-func (m *Manager) AddServer(port int, password, method string) error {
-	payload, _ := json.Marshal(map[string]any{
+func (m *Manager) AddServer(port int, password, method string, speedLimitKbps int64) error {
+	params := map[string]any{
 		"server_port": port,
 		"password":    password,
 		"method":      method,
 		"mode":        "tcp_and_udp",
-	})
+	}
+	if speedLimitKbps > 0 {
+		params["speed_limit"] = speedLimitKbps * 1024
+	}
+	payload, _ := json.Marshal(params)
 	resp, err := m.send("add: " + string(payload))
 	if err != nil {
 		return err

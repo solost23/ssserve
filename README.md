@@ -97,8 +97,9 @@ docker exec nginx-sub tail -f /var/log/nginx/sub.access.log
 | `.env.example` | 配置变量模板 |
 | `config/config.example.json` | ssserver 配置模板 |
 | `config/nginx.example.conf` | nginx 主配置模板 |
-| `server/` | Go 管理服务源码 |
-| `web/index.html` | 前端管理界面 |
+| `config/nginx.bootstrap.conf` | 申请证书时临时使用的 nginx 配置 |
+| `web/front/` | Vue 3 前端管理界面 |
+| `web/server/` | Go 管理服务源码 |
 | `setup.sh` | 从 `.env` 生成运行时配置 |
 | `cleanup.sh` | 清除生成的运行时配置 |
 

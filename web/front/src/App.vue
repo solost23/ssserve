@@ -4,9 +4,11 @@ import LoginPage from './components/LoginPage.vue'
 import TokensTab from './components/TokensTab.vue'
 import AdminsTab from './components/AdminsTab.vue'
 import ToastMsg from './components/ToastMsg.vue'
+import ChangePasswordModal from './components/ChangePasswordModal.vue'
 import { ref } from 'vue'
 
 const tab = ref('tokens')
+const showPwModal = ref(false)
 </script>
 
 <template>
@@ -21,6 +23,7 @@ const tab = ref('tokens')
         </div>
         <div class="header-user">
           <span class="user-chip">{{ auth.user }}</span>
+          <button class="btn-outline btn-sm" @click="showPwModal = true">改密码</button>
           <button class="btn-outline btn-sm" @click="clearAuth">退出</button>
         </div>
       </div>
@@ -44,6 +47,7 @@ const tab = ref('tokens')
     </main>
   </template>
 
+  <ChangePasswordModal v-if="showPwModal" @close="showPwModal = false" />
   <ToastMsg />
 </template>
 

@@ -13,3 +13,10 @@ config/subscribe/*.yaml
 certbot/conf/
 certbot/www/*
 !certbot/www/.gitkeep
+
+# Frontend build output and dependencies
+web/front/node_modules/
+web/front/dist/
+
+# Go build output
+web/server/server

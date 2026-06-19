@@ -124,6 +124,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/sub/", h.handleSub)
 	mux.HandleFunc("/admin/login", h.handleLogin)
+	mux.HandleFunc("/admin/password", h.jwtAuth(false, h.handleChangePassword))
 	mux.HandleFunc("/admin/tokens", h.jwtAuth(false, h.handleTokens))
 	mux.HandleFunc("/admin/tokens/", h.jwtAuth(false, h.handleTokenByID))
 	mux.HandleFunc("/admin/admins", h.jwtAuth(true, h.handleAdmins))
@@ -159,7 +160,7 @@ func (h *handler) syncToManager() {
 		if _, exists := stats[t.ServerPort]; exists {
 			continue
 		}
-		if err := h.mgr.AddServer(t.ServerPort, t.Password, h.cfg.Cipher); err != nil {
+		if err := h.mgr.AddServer(t.ServerPort, t.Password, h.cfg.Cipher, t.SpeedLimitKbps); err != nil {
 			log.Printf("sync: add port %d: %v", t.ServerPort, err)
 			continue
 		}
@@ -329,6 +330,27 @@ func (h *handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *handler) handleChangePassword(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	c, _ := h.parseJWT(r)
+	var req struct {
+		CurrentPassword string `json:"current_password"`
+		NewPassword     string `json:"new_password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.CurrentPassword == "" || req.NewPassword == "" {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	if err := h.db.ChangePassword(c.Username, req.CurrentPassword, req.NewPassword); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // --- admin management (owner only) ---
 
 func (h *handler) handleAdmins(w http.ResponseWriter, r *http.Request) {
@@ -420,47 +442,50 @@ func (h *handler) handleTokens(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		type tokenResp struct {
-			ID         string   `json:"id"`
-			Name       string   `json:"name"`
-			Token      string   `json:"token"`
-			SubURL     string   `json:"sub_url"`
-			ClashURL   string   `json:"clash_url"`
-			SSURL      string   `json:"ss_url"`
-			ServerPort int      `json:"server_port"`
-			QuotaGB    *float64 `json:"quota_gb"`
-			UsedBytes  int64    `json:"used_bytes"`
-			CreatedAt  string   `json:"created_at"`
-			UpdatedAt  string   `json:"updated_at"`
-			ExpiresAt  *string  `json:"expires_at"`
-			Active     bool     `json:"active"`
-			Suspended  bool     `json:"suspended"`
+			ID             string   `json:"id"`
+			Name           string   `json:"name"`
+			Token          string   `json:"token"`
+			SubURL         string   `json:"sub_url"`
+			ClashURL       string   `json:"clash_url"`
+			SSURL          string   `json:"ss_url"`
+			ServerPort     int      `json:"server_port"`
+			QuotaGB        *float64 `json:"quota_gb"`
+			UsedBytes      int64    `json:"used_bytes"`
+			CreatedAt      string   `json:"created_at"`
+			UpdatedAt      string   `json:"updated_at"`
+			ExpiresAt      *string  `json:"expires_at"`
+			Active         bool     `json:"active"`
+			Suspended      bool     `json:"suspended"`
+			SpeedLimitKbps int64    `json:"speed_limit_kbps"`
 		}
 		resp := make([]tokenResp, len(tokens))
 		for i, t := range tokens {
 			resp[i] = tokenResp{
-				ID:         t.ID,
-				Name:       t.Name,
-				Token:      t.Token,
-				SubURL:     h.cfg.SubURL(t.Token),
-				ClashURL:   h.cfg.SubURL(t.Token),
-				SSURL:      h.cfg.SSURL(t.Password, t.ServerPort),
-				ServerPort: t.ServerPort,
-				QuotaGB:    t.QuotaGB,
-				UsedBytes:  t.UsedBytes,
-				CreatedAt:  t.CreatedAt,
-				UpdatedAt:  t.UpdatedAt,
-				ExpiresAt:  t.ExpiresAt,
-				Active:     t.Active,
-				Suspended:  t.Suspended,
+				ID:             t.ID,
+				Name:           t.Name,
+				Token:          t.Token,
+				SubURL:         h.cfg.SubURL(t.Token),
+				ClashURL:       h.cfg.SubURL(t.Token),
+				SSURL:          h.cfg.SSURL(t.Password, t.ServerPort),
+				ServerPort:     t.ServerPort,
+				QuotaGB:        t.QuotaGB,
+				UsedBytes:      t.UsedBytes,
+				CreatedAt:      t.CreatedAt,
+				UpdatedAt:      t.UpdatedAt,
+				ExpiresAt:      t.ExpiresAt,
+				Active:         t.Active,
+				Suspended:      t.Suspended,
+				SpeedLimitKbps: t.SpeedLimitKbps,
 			}
 		}
 		writeJSON(w, http.StatusOK, resp)
 
 	case http.MethodPost:
 		var req struct {
-			Name       string   `json:"name"`
-			ExpiryDays *int     `json:"expires_days"`
-			QuotaGB    *float64 `json:"quota_gb"`
+			Name           string   `json:"name"`
+			ExpiryDays     *int     `json:"expires_days"`
+			QuotaGB        *float64 `json:"quota_gb"`
+			SpeedLimitKbps int64    `json:"speed_limit_kbps"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
 			http.Error(w, "invalid request", http.StatusBadRequest)
@@ -481,7 +506,7 @@ func (h *handler) handleTokens(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		if err := h.mgr.AddServer(port, password, h.cfg.Cipher); err != nil {
+		if err := h.mgr.AddServer(port, password, h.cfg.Cipher, req.SpeedLimitKbps); err != nil {
 			http.Error(w, "failed to register with ssserver: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -493,7 +518,7 @@ func (h *handler) handleTokens(w http.ResponseWriter, r *http.Request) {
 			}
 			h.statBaseMu.Unlock()
 		}
-		t, err := h.db.CreateToken(req.Name, token, password, port, req.ExpiryDays, req.QuotaGB)
+		t, err := h.db.CreateToken(req.Name, token, password, port, req.ExpiryDays, req.QuotaGB, req.SpeedLimitKbps)
 		if err != nil {
 			// roll back ssmanager registration to avoid port leak
 			if rmErr := h.mgr.RemoveServer(port); rmErr != nil {
@@ -526,10 +551,114 @@ func (h *handler) handleTokenByID(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPatch:
 		var req struct {
-			QuotaGB *float64 `json:"quota_gb"`
+			Name           *string  `json:"name"`
+			QuotaGB        *float64 `json:"quota_gb"`
+			ResetUsage     bool     `json:"reset_usage"`
+			ExtendDays     *int     `json:"extend_days"`
+			Suspended      *bool    `json:"suspended"`
+			SpeedLimitKbps *int64   `json:"speed_limit_kbps"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		if req.Name != nil {
+			if *req.Name == "" {
+				http.Error(w, "name cannot be empty", http.StatusBadRequest)
+				return
+			}
+			if err := h.db.RenameToken(token, *req.Name); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if req.SpeedLimitKbps != nil {
+			if err := h.db.SetSpeedLimit(token, *req.SpeedLimitKbps); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			// re-register active token so ssmanager picks up the new limit
+			if t, err := h.db.GetActiveToken(token); err == nil {
+				if err := h.mgr.AddServer(t.ServerPort, t.Password, h.cfg.Cipher, t.SpeedLimitKbps); err != nil {
+					log.Printf("speed limit update: re-register port %d: %v", t.ServerPort, err)
+				}
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if req.ResetUsage {
+			if err := h.db.ResetUsage(token); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if t, err := h.db.GetActiveToken(token); err == nil {
+				if err := h.mgr.AddServer(t.ServerPort, t.Password, h.cfg.Cipher, t.SpeedLimitKbps); err != nil {
+					log.Printf("reset usage: re-register port %d: %v", t.ServerPort, err)
+				}
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if req.ExtendDays != nil {
+			t, err := h.db.GetToken(token)
+			if err != nil {
+				http.Error(w, "not found", http.StatusNotFound)
+				return
+			}
+			expiredAndSuspended := t.Suspended && t.ExpiresAt != nil && *t.ExpiresAt <= now()
+			quotaAlsoExhausted := t.QuotaGB != nil && float64(t.UsedBytes) >= *t.QuotaGB*1e9
+			if err := h.db.ExtendExpiry(token, *req.ExtendDays); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if expiredAndSuspended && !quotaAlsoExhausted {
+				if err := h.db.SetSuspended(token, false); err != nil {
+					log.Printf("extend: lift suspension %s: %v", token, err)
+				} else if err := h.mgr.AddServer(t.ServerPort, t.Password, h.cfg.Cipher, t.SpeedLimitKbps); err != nil {
+					log.Printf("extend: re-register port %d: %v", t.ServerPort, err)
+				}
+			} else if expiredAndSuspended && quotaAlsoExhausted {
+				writeJSON(w, http.StatusOK, map[string]string{
+					"message": "已续期，但流量配额已耗尽，请重置流量后手动恢复",
+				})
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if req.Suspended != nil {
+			t, err := h.db.GetToken(token)
+			if err != nil {
+				http.Error(w, "not found", http.StatusNotFound)
+				return
+			}
+			// block resume if the token can't actually be used
+			if !*req.Suspended {
+				if t.ExpiresAt != nil && *t.ExpiresAt <= now() {
+					http.Error(w, "token is expired, extend expiry first", http.StatusBadRequest)
+					return
+				}
+				if t.QuotaGB != nil && float64(t.UsedBytes) >= *t.QuotaGB*1e9 {
+					http.Error(w, "quota exhausted, reset usage or increase quota first", http.StatusBadRequest)
+					return
+				}
+			}
+			if err := h.db.SetSuspended(token, *req.Suspended); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if *req.Suspended {
+				if err := h.mgr.RemoveServer(t.ServerPort); err != nil {
+					log.Printf("suspend: remove port %d: %v", t.ServerPort, err)
+				}
+			} else {
+				if err := h.mgr.AddServer(t.ServerPort, t.Password, h.cfg.Cipher, t.SpeedLimitKbps); err != nil {
+					log.Printf("resume: add port %d: %v", t.ServerPort, err)
+				}
+			}
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 		if err := h.db.UpdateQuota(token, req.QuotaGB); err != nil {
@@ -538,7 +667,7 @@ func (h *handler) handleTokenByID(w http.ResponseWriter, r *http.Request) {
 		}
 		// re-register with ssmanager if suspension was lifted
 		if t, err := h.db.GetActiveToken(token); err == nil {
-			if err := h.mgr.AddServer(t.ServerPort, t.Password, h.cfg.Cipher); err != nil {
+			if err := h.mgr.AddServer(t.ServerPort, t.Password, h.cfg.Cipher, t.SpeedLimitKbps); err != nil {
 				log.Printf("quota update: re-register port %d: %v", t.ServerPort, err)
 			}
 		}

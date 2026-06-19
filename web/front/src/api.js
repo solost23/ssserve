@@ -40,6 +40,65 @@ export async function deleteToken(token) {
   if (!res.ok) throw new Error('Failed to delete token')
 }
 
+export async function changePassword(currentPassword, newPassword) {
+  const res = await req('/admin/password', {
+    method: 'POST',
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(text.trim() || 'Failed to change password')
+  }
+}
+
+export async function resetUsage(token) {
+  const res = await req('/admin/tokens/' + token, {
+    method: 'PATCH',
+    body: JSON.stringify({ reset_usage: true }),
+  })
+  if (!res.ok) throw new Error('Failed to reset usage')
+}
+
+export async function extendExpiry(token, days) {
+  const res = await req('/admin/tokens/' + token, {
+    method: 'PATCH',
+    body: JSON.stringify({ extend_days: days }),
+  })
+  if (!res.ok) throw new Error('Failed to extend expiry')
+  if (res.status === 200) {
+    const data = await res.json()
+    return data.message || null
+  }
+  return null
+}
+
+export async function setSuspended(token, suspended) {
+  const res = await req('/admin/tokens/' + token, {
+    method: 'PATCH',
+    body: JSON.stringify({ suspended }),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(text.trim() || 'Failed to update suspension')
+  }
+}
+
+export async function renameToken(token, name) {
+  const res = await req('/admin/tokens/' + token, {
+    method: 'PATCH',
+    body: JSON.stringify({ name }),
+  })
+  if (!res.ok) throw new Error('Failed to rename token')
+}
+
+export async function setSpeedLimit(token, kbps) {
+  const res = await req('/admin/tokens/' + token, {
+    method: 'PATCH',
+    body: JSON.stringify({ speed_limit_kbps: kbps }),
+  })
+  if (!res.ok) throw new Error('Failed to update speed limit')
+}
+
 export async function updateQuota(token, quotaGB) {
   const res = await req('/admin/tokens/' + token, {
     method: 'PATCH',
