@@ -160,7 +160,7 @@ func (h *handler) syncToManager() {
 		if _, exists := stats[t.ServerPort]; exists {
 			continue
 		}
-		if err := h.mgr.AddServer(t.ServerPort, t.Password, h.cfg.Cipher, t.SpeedLimitKbps); err != nil {
+		if err := h.mgr.AddServer(t.ServerPort, t.Password, h.cfg.Cipher); err != nil {
 			log.Printf("sync: add port %d: %v", t.ServerPort, err)
 			continue
 		}
@@ -456,7 +456,6 @@ func (h *handler) handleTokens(w http.ResponseWriter, r *http.Request) {
 			ExpiresAt      *string  `json:"expires_at"`
 			Active         bool     `json:"active"`
 			Suspended      bool     `json:"suspended"`
-			SpeedLimitKbps int64    `json:"speed_limit_kbps"`
 		}
 		resp := make([]tokenResp, len(tokens))
 		for i, t := range tokens {
@@ -475,17 +474,15 @@ func (h *handler) handleTokens(w http.ResponseWriter, r *http.Request) {
 				ExpiresAt:      t.ExpiresAt,
 				Active:         t.Active,
 				Suspended:      t.Suspended,
-				SpeedLimitKbps: t.SpeedLimitKbps,
 			}
 		}
 		writeJSON(w, http.StatusOK, resp)
 
 	case http.MethodPost:
 		var req struct {
-			Name           string   `json:"name"`
-			ExpiryDays     *int     `json:"expires_days"`
-			QuotaGB        *float64 `json:"quota_gb"`
-			SpeedLimitKbps int64    `json:"speed_limit_kbps"`
+			Name       string   `json:"name"`
+			ExpiryDays *int     `json:"expires_days"`
+			QuotaGB    *float64 `json:"quota_gb"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
 			http.Error(w, "invalid request", http.StatusBadRequest)
@@ -506,7 +503,7 @@ func (h *handler) handleTokens(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		if err := h.mgr.AddServer(port, password, h.cfg.Cipher, req.SpeedLimitKbps); err != nil {
+		if err := h.mgr.AddServer(port, password, h.cfg.Cipher); err != nil {
 			http.Error(w, "failed to register with ssserver: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -518,7 +515,7 @@ func (h *handler) handleTokens(w http.ResponseWriter, r *http.Request) {
 			}
 			h.statBaseMu.Unlock()
 		}
-		t, err := h.db.CreateToken(req.Name, token, password, port, req.ExpiryDays, req.QuotaGB, req.SpeedLimitKbps)
+		t, err := h.db.CreateToken(req.Name, token, password, port, req.ExpiryDays, req.QuotaGB)
 		if err != nil {
 			// roll back ssmanager registration to avoid port leak
 			if rmErr := h.mgr.RemoveServer(port); rmErr != nil {
@@ -551,12 +548,11 @@ func (h *handler) handleTokenByID(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPatch:
 		var req struct {
-			Name           *string  `json:"name"`
-			QuotaGB        *float64 `json:"quota_gb"`
-			ResetUsage     bool     `json:"reset_usage"`
-			ExtendDays     *int     `json:"extend_days"`
-			Suspended      *bool    `json:"suspended"`
-			SpeedLimitKbps *int64   `json:"speed_limit_kbps"`
+			Name       *string  `json:"name"`
+			QuotaGB    *float64 `json:"quota_gb"`
+			ResetUsage bool     `json:"reset_usage"`
+			ExtendDays *int     `json:"extend_days"`
+			Suspended  *bool    `json:"suspended"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid request", http.StatusBadRequest)
@@ -574,27 +570,13 @@ func (h *handler) handleTokenByID(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		if req.SpeedLimitKbps != nil {
-			if err := h.db.SetSpeedLimit(token, *req.SpeedLimitKbps); err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			// re-register active token so ssmanager picks up the new limit
-			if t, err := h.db.GetActiveToken(token); err == nil {
-				if err := h.mgr.AddServer(t.ServerPort, t.Password, h.cfg.Cipher, t.SpeedLimitKbps); err != nil {
-					log.Printf("speed limit update: re-register port %d: %v", t.ServerPort, err)
-				}
-			}
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
 		if req.ResetUsage {
 			if err := h.db.ResetUsage(token); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
 			if t, err := h.db.GetActiveToken(token); err == nil {
-				if err := h.mgr.AddServer(t.ServerPort, t.Password, h.cfg.Cipher, t.SpeedLimitKbps); err != nil {
+				if err := h.mgr.AddServer(t.ServerPort, t.Password, h.cfg.Cipher); err != nil {
 					log.Printf("reset usage: re-register port %d: %v", t.ServerPort, err)
 				}
 			}
@@ -616,7 +598,7 @@ func (h *handler) handleTokenByID(w http.ResponseWriter, r *http.Request) {
 			if expiredAndSuspended && !quotaAlsoExhausted {
 				if err := h.db.SetSuspended(token, false); err != nil {
 					log.Printf("extend: lift suspension %s: %v", token, err)
-				} else if err := h.mgr.AddServer(t.ServerPort, t.Password, h.cfg.Cipher, t.SpeedLimitKbps); err != nil {
+				} else if err := h.mgr.AddServer(t.ServerPort, t.Password, h.cfg.Cipher); err != nil {
 					log.Printf("extend: re-register port %d: %v", t.ServerPort, err)
 				}
 			} else if expiredAndSuspended && quotaAlsoExhausted {
@@ -654,7 +636,7 @@ func (h *handler) handleTokenByID(w http.ResponseWriter, r *http.Request) {
 					log.Printf("suspend: remove port %d: %v", t.ServerPort, err)
 				}
 			} else {
-				if err := h.mgr.AddServer(t.ServerPort, t.Password, h.cfg.Cipher, t.SpeedLimitKbps); err != nil {
+				if err := h.mgr.AddServer(t.ServerPort, t.Password, h.cfg.Cipher); err != nil {
 					log.Printf("resume: add port %d: %v", t.ServerPort, err)
 				}
 			}
@@ -667,7 +649,7 @@ func (h *handler) handleTokenByID(w http.ResponseWriter, r *http.Request) {
 		}
 		// re-register with ssmanager if suspension was lifted
 		if t, err := h.db.GetActiveToken(token); err == nil {
-			if err := h.mgr.AddServer(t.ServerPort, t.Password, h.cfg.Cipher, t.SpeedLimitKbps); err != nil {
+			if err := h.mgr.AddServer(t.ServerPort, t.Password, h.cfg.Cipher); err != nil {
 				log.Printf("quota update: re-register port %d: %v", t.ServerPort, err)
 			}
 		}

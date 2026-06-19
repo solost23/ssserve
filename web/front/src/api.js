@@ -91,14 +91,6 @@ export async function renameToken(token, name) {
   if (!res.ok) throw new Error('Failed to rename token')
 }
 
-export async function setSpeedLimit(token, kbps) {
-  const res = await req('/admin/tokens/' + token, {
-    method: 'PATCH',
-    body: JSON.stringify({ speed_limit_kbps: kbps }),
-  })
-  if (!res.ok) throw new Error('Failed to update speed limit')
-}
-
 export async function updateQuota(token, quotaGB) {
   const res = await req('/admin/tokens/' + token, {
     method: 'PATCH',

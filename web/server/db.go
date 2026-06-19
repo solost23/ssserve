@@ -11,19 +11,18 @@ import (
 )
 
 type Token struct {
-	ID             string
-	Name           string
-	Token          string
-	Password       string
-	ServerPort     int
-	QuotaGB        *float64
-	UsedBytes      int64
-	CreatedAt      string
-	UpdatedAt      string
-	ExpiresAt      *string
-	Active         bool
-	Suspended      bool
-	SpeedLimitKbps int64
+	ID         string
+	Name       string
+	Token      string
+	Password   string
+	ServerPort int
+	QuotaGB    *float64
+	UsedBytes  int64
+	CreatedAt  string
+	UpdatedAt  string
+	ExpiresAt  *string
+	Active     bool
+	Suspended  bool
 }
 
 type Admin struct {
@@ -84,7 +83,6 @@ func initDB(path string) (*DB, error) {
 		{"tokens", "suspended", "INTEGER NOT NULL DEFAULT 0"},
 		{"tokens", "updated_at", "TEXT NOT NULL DEFAULT ''"},
 		{"tokens", "deleted_at", "TEXT"},
-		{"tokens", "speed_limit_kbps", "INTEGER NOT NULL DEFAULT 0"},
 		{"admins", "updated_at", "TEXT NOT NULL DEFAULT ''"},
 		{"admins", "deleted_at", "TEXT"},
 	} {
@@ -220,7 +218,7 @@ func (d *DB) NextPort(basePort int) (int, error) {
 	return maxPort + 1, nil
 }
 
-func (d *DB) CreateToken(name, token, password string, serverPort int, expiryDays *int, quotaGB *float64, speedLimitKbps int64) (*Token, error) {
+func (d *DB) CreateToken(name, token, password string, serverPort int, expiryDays *int, quotaGB *float64) (*Token, error) {
 	id := fmt.Sprintf("%d", time.Now().UnixNano())
 	var expiresAt *string
 	if expiryDays != nil {
@@ -229,9 +227,9 @@ func (d *DB) CreateToken(name, token, password string, serverPort int, expiryDay
 	}
 	t := now()
 	_, err := d.db.Exec(
-		`INSERT INTO tokens (id, name, token, password, server_port, quota_gb, expires_at, created_at, updated_at, speed_limit_kbps)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, name, token, password, serverPort, quotaGB, expiresAt, t, t, speedLimitKbps,
+		`INSERT INTO tokens (id, name, token, password, server_port, quota_gb, expires_at, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, name, token, password, serverPort, quotaGB, expiresAt, t, t,
 	)
 	if err != nil {
 		return nil, err
@@ -254,26 +252,11 @@ func (d *DB) RenameToken(token, name string) error {
 	return nil
 }
 
-func (d *DB) SetSpeedLimit(token string, kbps int64) error {
-	res, err := d.db.Exec(
-		`UPDATE tokens SET speed_limit_kbps = ?, updated_at = ? WHERE token = ? AND deleted_at IS NULL`,
-		kbps, now(), token,
-	)
-	if err != nil {
-		return err
-	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
 // GetActiveToken returns a token only if it is usable: not deleted, active, not suspended, not expired.
 func (d *DB) GetActiveToken(token string) (*Token, error) {
 	row := d.db.QueryRow(`
 		SELECT id, name, token, password, server_port, quota_gb, used_bytes,
-		       created_at, updated_at, expires_at, active, suspended, speed_limit_kbps
+		       created_at, updated_at, expires_at, active, suspended
 		FROM tokens
 		WHERE token = ?
 		  AND deleted_at IS NULL
@@ -288,7 +271,7 @@ func (d *DB) GetActiveToken(token string) (*Token, error) {
 func (d *DB) GetToken(token string) (*Token, error) {
 	row := d.db.QueryRow(`
 		SELECT id, name, token, password, server_port, quota_gb, used_bytes,
-		       created_at, updated_at, expires_at, active, suspended, speed_limit_kbps
+		       created_at, updated_at, expires_at, active, suspended
 		FROM tokens WHERE token = ? AND deleted_at IS NULL
 	`, token)
 	return scanToken(row)
@@ -297,7 +280,7 @@ func (d *DB) GetToken(token string) (*Token, error) {
 func (d *DB) ListTokens() ([]Token, error) {
 	rows, err := d.db.Query(`
 		SELECT id, name, token, password, server_port, quota_gb, used_bytes,
-		       created_at, updated_at, expires_at, active, suspended, speed_limit_kbps
+		       created_at, updated_at, expires_at, active, suspended
 		FROM tokens WHERE deleted_at IS NULL ORDER BY created_at DESC
 	`)
 	if err != nil {
@@ -319,7 +302,7 @@ func (d *DB) ListTokens() ([]Token, error) {
 func (d *DB) ActiveTokens() ([]Token, error) {
 	rows, err := d.db.Query(`
 		SELECT id, name, token, password, server_port, quota_gb, used_bytes,
-		       created_at, updated_at, expires_at, active, suspended, speed_limit_kbps
+		       created_at, updated_at, expires_at, active, suspended
 		FROM tokens
 		WHERE deleted_at IS NULL
 		  AND active = 1
@@ -345,7 +328,7 @@ func (d *DB) ActiveTokens() ([]Token, error) {
 func (d *DB) ExpiredActiveTokens() ([]Token, error) {
 	rows, err := d.db.Query(`
 		SELECT id, name, token, password, server_port, quota_gb, used_bytes,
-		       created_at, updated_at, expires_at, active, suspended, speed_limit_kbps
+		       created_at, updated_at, expires_at, active, suspended
 		FROM tokens
 		WHERE deleted_at IS NULL
 		  AND active = 1
@@ -517,7 +500,7 @@ func scanToken(s scanner) (*Token, error) {
 	err := s.Scan(
 		&t.ID, &t.Name, &t.Token, &t.Password, &t.ServerPort,
 		&t.QuotaGB, &t.UsedBytes, &t.CreatedAt, &t.UpdatedAt, &t.ExpiresAt,
-		&active, &suspended, &t.SpeedLimitKbps,
+		&active, &suspended,
 	)
 	if err != nil {
 		return nil, err

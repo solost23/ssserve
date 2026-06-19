@@ -1,10 +1,9 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import { listTokens, createToken, deleteToken, updateQuota, resetUsage, extendExpiry, setSuspended, renameToken, setSpeedLimit } from '../api'
+import { listTokens, createToken, deleteToken, updateQuota, resetUsage, extendExpiry, setSuspended, renameToken } from '../api'
 import { showToast } from '../toast'
 import QuotaModal from './QuotaModal.vue'
 import ExtendModal from './ExtendModal.vue'
-import SpeedModal from './SpeedModal.vue'
 import QrModal from './QrModal.vue'
 
 const tokens = ref([])
@@ -13,12 +12,10 @@ const loading = ref(false)
 const newName = ref('')
 const newQuota = ref('')
 const newExpires = ref('')
-const newSpeed = ref('')
 const createErr = ref('')
 
 const quotaTarget = ref(null)
 const extendTarget = ref(null)
-const speedTarget = ref(null)
 const qrTarget = ref(null)
 
 // inline rename state
@@ -36,10 +33,9 @@ async function doCreate() {
   const body = { name: newName.value.trim() }
   if (newQuota.value) body.quota_gb = parseFloat(newQuota.value)
   if (newExpires.value) body.expires_days = parseInt(newExpires.value)
-  if (newSpeed.value) body.speed_limit_kbps = parseInt(newSpeed.value)
   try {
     const data = await createToken(body)
-    newName.value = ''; newQuota.value = ''; newExpires.value = ''; newSpeed.value = ''
+    newName.value = ''; newQuota.value = ''; newExpires.value = ''
     copy(data.clash_url || data.sub_url)
     showToast('已创建，订阅链接已复制')
     load()
@@ -102,17 +98,6 @@ async function onSaveQuota({ token, quotaGB }) {
     quotaTarget.value = null
     load()
   } catch { showToast('更新失败') }
-}
-
-function openSpeed(t) { speedTarget.value = { token: t.token, kbps: t.speed_limit_kbps || 0 } }
-
-async function onSaveSpeed({ token, kbps }) {
-  try {
-    await setSpeedLimit(token, kbps)
-    showToast(kbps > 0 ? `限速已设为 ${kbps} KB/s` : '已取消限速')
-    speedTarget.value = null
-    load()
-  } catch { showToast('设置失败') }
 }
 
 function copy(text) {
@@ -196,10 +181,6 @@ onMounted(load)
           <label>有效天数（留空永久）</label>
           <input v-model="newExpires" type="number" min="1" placeholder="永久" />
         </div>
-        <div class="field-wrap">
-          <label>限速 KB/s（留空不限）</label>
-          <input v-model="newSpeed" type="number" min="0" placeholder="不限" />
-        </div>
         <div class="field-wrap field-btn">
           <label>&nbsp;</label>
           <button class="btn-primary" @click="doCreate">创建</button>
@@ -248,7 +229,6 @@ onMounted(load)
                 <template v-else>
                   <strong class="token-name" @dblclick="startRename(t)" title="双击重命名">{{ t.name }}</strong>
                   <span class="token-port">:{{ t.server_port }}</span>
-                  <span v-if="t.speed_limit_kbps > 0" class="speed-badge">{{ t.speed_limit_kbps }} KB/s</span>
                 </template>
               </td>
               <td><span class="badge" :class="statusInfo(t).cls">{{ statusInfo(t).label }}</span></td>
@@ -292,7 +272,6 @@ onMounted(load)
               </td>
               <td>
                 <div class="action-col">
-                  <button v-if="t.active" class="btn-outline btn-sm" @click="openSpeed(t)">限速</button>
                   <button v-if="t.active" class="btn-outline btn-sm" @click="doToggleSuspend(t)">
                     {{ t.suspended ? '恢复' : '暂停' }}
                   </button>
@@ -321,14 +300,6 @@ onMounted(load)
       @cancel="extendTarget = null"
     />
 
-    <SpeedModal
-      v-if="speedTarget"
-      :token="speedTarget.token"
-      :current="speedTarget.kbps"
-      @save="onSaveSpeed"
-      @cancel="speedTarget = null"
-    />
-
     <QrModal
       v-if="qrTarget"
       :url="qrTarget.url"
@@ -345,7 +316,7 @@ onMounted(load)
 
 .create-row {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr 1fr auto;
+  grid-template-columns: 1fr 1fr 1fr auto;
   gap: 12px;
   align-items: end;
 }
@@ -369,11 +340,6 @@ tr:hover td { background: #fafbff; }
 
 .token-name { font-weight: 600; font-size: 13.5px; display: block; cursor: pointer; }
 .token-port { font-family: monospace; font-size: 11.5px; color: #94a3b8; }
-.speed-badge {
-  display: inline-block; margin-left: 6px;
-  background: #f0fdf4; color: #16a34a;
-  font-size: 10.5px; font-weight: 600; padding: 1px 6px; border-radius: 999px;
-}
 .rename-input {
   font-size: 13.5px; font-weight: 600;
   border: 1.5px solid #6366f1; border-radius: 5px;
