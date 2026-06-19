@@ -1,14 +1,18 @@
 services:
     nginx:
-      image: nginx:alpine
+      build:
+        context: ./web/front
+        dockerfile: Dockerfile
       container_name: nginx-sub
       restart: always
       ports:
         - "80:80"
+        - "443:443"
       volumes:
         - ./config/${NGINX_CONF:-nginx.conf}:/etc/nginx/conf.d/default.conf:ro
-        - ./web:/etc/nginx/web:ro
         - ./logs/nginx:/var/log/nginx
+        - ./certbot/www:/var/www/certbot:ro
+        - ./certbot/conf:/etc/letsencrypt:ro
       depends_on:
         - subserver
 
@@ -42,7 +46,7 @@ services:
           max-file: "5"
 
     subserver:
-      build: ./server
+      build: ./web/server
       container_name: subserver
       restart: always
       environment:
