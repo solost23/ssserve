@@ -2,7 +2,6 @@ package main
 
 import (
 	"crypto/rand"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -11,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -19,28 +19,38 @@ import (
 )
 
 type Config struct {
-	ServerAddr    string
-	Cipher        string
-	NodeName      string
-	AdminSecret   string // used only to seed the owner account on first run
-	JWTSecret     []byte
-	DBPath        string
-	ManagerAddr   string
-	UserPortStart int
+	ServerAddr     string
+	NodeName       string
+	AdminSecret    string // used only to seed the owner account on first run
+	JWTSecret      []byte
+	DBPath         string
+	XrayAPIAddr    string
+	XrayInboundTag string
+	XrayPort       int
+	XrayPublicKey  string
+	XrayShortID    string
+	XrayServerName string
 }
 
 func loadConfig() Config {
 	c := Config{
-		ServerAddr:    strings.TrimRight(os.Getenv("SERVER_ADDR"), "/"),
-		Cipher:        getEnvOr("SS_CIPHER", "chacha20-ietf-poly1305"),
-		NodeName:      getEnvOr("SS_NAME", "Tokyo"),
-		AdminSecret:   os.Getenv("ADMIN_SECRET"),
-		DBPath:        getEnvOr("DB_PATH", "/data/sub.db"),
-		ManagerAddr:   getEnvOr("MANAGER_ADDR", "ssserver:6001"),
-		UserPortStart: 40200,
+		ServerAddr:     strings.TrimRight(os.Getenv("SERVER_ADDR"), "/"),
+		NodeName:       getEnvOr("NODE_NAME", "Tokyo"),
+		AdminSecret:    os.Getenv("ADMIN_SECRET"),
+		DBPath:         getEnvOr("DB_PATH", "/data/sub.db"),
+		XrayAPIAddr:    getEnvOr("XRAY_API_ADDR", "xray:10085"),
+		XrayInboundTag: getEnvOr("XRAY_INBOUND_TAG", "vless-in"),
+		XrayPort:       443,
+		XrayPublicKey:  os.Getenv("XRAY_PUBLIC_KEY"),
+		XrayShortID:    os.Getenv("XRAY_SHORT_ID"),
+		XrayServerName: os.Getenv("XRAY_SERVER_NAME"),
 	}
-	if v := os.Getenv("SS_USER_PORT_START"); v != "" {
-		fmt.Sscanf(v, "%d", &c.UserPortStart)
+	if v := os.Getenv("XRAY_PORT"); v != "" {
+		port, err := strconv.Atoi(v)
+		if err != nil || port < 1 || port > 65535 {
+			log.Fatal("XRAY_PORT must be an integer between 1 and 65535")
+		}
+		c.XrayPort = port
 	}
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
@@ -52,6 +62,9 @@ func loadConfig() Config {
 	}
 	if c.AdminSecret == "" {
 		log.Fatal("ADMIN_SECRET is required")
+	}
+	if c.XrayPublicKey == "" || c.XrayShortID == "" || c.XrayServerName == "" {
+		log.Fatal("XRAY_PUBLIC_KEY, XRAY_SHORT_ID and XRAY_SERVER_NAME are required")
 	}
 	return c
 }
@@ -67,9 +80,17 @@ func (c Config) SubURL(token string) string {
 	return fmt.Sprintf("http://%s/sub/%s/clash.yaml", c.ServerAddr, token)
 }
 
-func (c Config) SSURL(password string, port int) string {
-	userInfo := base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", c.Cipher, password)))
-	return fmt.Sprintf("ss://%s@%s:%d#%s", userInfo, c.ServerAddr, port, url.QueryEscape(c.NodeName))
+func (c Config) VLESSURL(uuid string) string {
+	q := url.Values{}
+	q.Set("encryption", "none")
+	q.Set("flow", "xtls-rprx-vision")
+	q.Set("security", "reality")
+	q.Set("sni", c.XrayServerName)
+	q.Set("fp", "chrome")
+	q.Set("pbk", c.XrayPublicKey)
+	q.Set("sid", c.XrayShortID)
+	q.Set("type", "tcp")
+	return fmt.Sprintf("vless://%s@%s:%d?%s#%s", uuid, c.ServerAddr, c.XrayPort, q.Encode(), url.QueryEscape(c.NodeName))
 }
 
 func generateToken() (string, error) {
@@ -85,7 +106,7 @@ func generatePassword() (string, error) {
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
-	return base64.RawURLEncoding.EncodeToString(b), nil
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
 }
 
 func main() {
@@ -105,8 +126,8 @@ func main() {
 		log.Println("created owner account: admin")
 	}
 
-	mgr := NewManager(cfg.ManagerAddr)
-	h := &handler{cfg: cfg, db: db, mgr: mgr, statBase: make(map[int]int64)}
+	mgr := NewManager(cfg.XrayAPIAddr, cfg.XrayInboundTag)
+	h := &handler{cfg: cfg, db: db, mgr: mgr, statBase: make(map[string]int64)}
 
 	h.syncToManager()
 	h.resetStatsBaseline()
@@ -141,7 +162,7 @@ type handler struct {
 	db         *DB
 	mgr        *Manager
 	statBaseMu sync.Mutex
-	statBase   map[int]int64
+	statBase   map[string]int64
 }
 
 func (h *handler) syncToManager() {
@@ -150,23 +171,15 @@ func (h *handler) syncToManager() {
 		log.Printf("sync: list tokens: %v", err)
 		return
 	}
-	stats, err := h.mgr.Stats()
-	if err != nil {
-		log.Printf("sync: stats: %v", err)
-		return
-	}
 	added := 0
 	for _, t := range tokens {
-		if _, exists := stats[t.ServerPort]; exists {
-			continue
-		}
-		if err := h.mgr.AddServer(t.ServerPort, t.Password, h.cfg.Cipher); err != nil {
-			log.Printf("sync: add port %d: %v", t.ServerPort, err)
+		if err := h.mgr.AddUser(t.Password, t.Token); err != nil {
+			log.Printf("sync: add user %s: %v", t.Token, err)
 			continue
 		}
 		added++
 	}
-	log.Printf("sync: checked %d active tokens, added %d missing ports", len(tokens), added)
+	log.Printf("sync: checked %d active tokens, submitted %d users", len(tokens), added)
 }
 
 func (h *handler) resetStatsBaseline() {
@@ -174,7 +187,7 @@ func (h *handler) resetStatsBaseline() {
 		h.statBaseMu.Lock()
 		h.statBase = base
 		h.statBaseMu.Unlock()
-		log.Printf("stats: baseline captured for %d ports", len(base))
+		log.Printf("stats: baseline captured for %d users", len(base))
 	} else {
 		log.Printf("stats: baseline capture failed: %v", err)
 	}
@@ -188,11 +201,11 @@ func (h *handler) pollStats() {
 	}
 
 	h.statBaseMu.Lock()
-	increments := make(map[int]int64, len(stats))
-	for port, raw := range stats {
-		increments[port] = raw - h.statBase[port]
-		if increments[port] < 0 {
-			increments[port] = 0
+	increments := make(map[string]int64, len(stats))
+	for token, raw := range stats {
+		increments[token] = raw - h.statBase[token]
+		if increments[token] < 0 {
+			increments[token] = 0
 		}
 	}
 	h.statBaseMu.Unlock()
@@ -213,29 +226,29 @@ func (h *handler) pollStats() {
 	}
 	for _, t := range tokens {
 		if t.QuotaGB != nil && float64(t.UsedBytes) >= *t.QuotaGB*1e9 {
-			if err := h.mgr.RemoveServer(t.ServerPort); err != nil {
-				log.Printf("quota enforce: remove port %d: %v", t.ServerPort, err)
-			} else {
-				log.Printf("quota exceeded: suspended port %d (%s)", t.ServerPort, t.Name)
+			if err := h.mgr.RemoveUser(t.Token); err != nil {
+				log.Printf("quota enforce: remove user %s: %v", t.Token, err)
+				continue
 			}
+			log.Printf("quota exceeded: suspended user %s (%s)", t.Token, t.Name)
 			if err := h.db.SuspendToken(t.Token); err != nil {
 				log.Printf("quota enforce: suspend token %s: %v", t.Token, err)
 			}
 		}
 	}
 
-	// remove expired tokens from ssmanager
+	// remove expired tokens from Xray
 	expired, err := h.db.ExpiredActiveTokens()
 	if err != nil {
 		log.Printf("expired tokens query: %v", err)
 		return
 	}
 	for _, t := range expired {
-		if err := h.mgr.RemoveServer(t.ServerPort); err != nil {
-			log.Printf("expiry enforce: remove port %d: %v", t.ServerPort, err)
-		} else {
-			log.Printf("token expired: removed port %d (%s)", t.ServerPort, t.Name)
+		if err := h.mgr.RemoveUser(t.Token); err != nil {
+			log.Printf("expiry enforce: remove user %s: %v", t.Token, err)
+			continue
 		}
+		log.Printf("token expired: removed user %s (%s)", t.Token, t.Name)
 		if err := h.db.SuspendToken(t.Token); err != nil {
 			log.Printf("expiry enforce: suspend token %s: %v", t.Token, err)
 		}
@@ -292,7 +305,12 @@ func (h *handler) jwtAuth(ownerOnly bool, next http.HandlerFunc) http.HandlerFun
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		if ownerOnly && !c.IsOwner {
+		admin, err := h.db.GetAdmin(c.Username)
+		if err != nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if ownerOnly && !admin.IsOwner {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
@@ -427,7 +445,7 @@ func (h *handler) handleSub(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	yaml := renderClash(h.cfg, t.Password, t.ServerPort)
+	yaml := renderClash(h.cfg, t.Password)
 	w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 	fmt.Fprint(w, yaml)
@@ -442,38 +460,36 @@ func (h *handler) handleTokens(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		type tokenResp struct {
-			ID             string   `json:"id"`
-			Name           string   `json:"name"`
-			Token          string   `json:"token"`
-			SubURL         string   `json:"sub_url"`
-			ClashURL       string   `json:"clash_url"`
-			SSURL          string   `json:"ss_url"`
-			ServerPort     int      `json:"server_port"`
-			QuotaGB        *float64 `json:"quota_gb"`
-			UsedBytes      int64    `json:"used_bytes"`
-			CreatedAt      string   `json:"created_at"`
-			UpdatedAt      string   `json:"updated_at"`
-			ExpiresAt      *string  `json:"expires_at"`
-			Active         bool     `json:"active"`
-			Suspended      bool     `json:"suspended"`
+			ID        string   `json:"id"`
+			Name      string   `json:"name"`
+			Token     string   `json:"token"`
+			SubURL    string   `json:"sub_url"`
+			ClashURL  string   `json:"clash_url"`
+			VLESSURL  string   `json:"vless_url"`
+			QuotaGB   *float64 `json:"quota_gb"`
+			UsedBytes int64    `json:"used_bytes"`
+			CreatedAt string   `json:"created_at"`
+			UpdatedAt string   `json:"updated_at"`
+			ExpiresAt *string  `json:"expires_at"`
+			Active    bool     `json:"active"`
+			Suspended bool     `json:"suspended"`
 		}
 		resp := make([]tokenResp, len(tokens))
 		for i, t := range tokens {
 			resp[i] = tokenResp{
-				ID:             t.ID,
-				Name:           t.Name,
-				Token:          t.Token,
-				SubURL:         h.cfg.SubURL(t.Token),
-				ClashURL:       h.cfg.SubURL(t.Token),
-				SSURL:          h.cfg.SSURL(t.Password, t.ServerPort),
-				ServerPort:     t.ServerPort,
-				QuotaGB:        t.QuotaGB,
-				UsedBytes:      t.UsedBytes,
-				CreatedAt:      t.CreatedAt,
-				UpdatedAt:      t.UpdatedAt,
-				ExpiresAt:      t.ExpiresAt,
-				Active:         t.Active,
-				Suspended:      t.Suspended,
+				ID:        t.ID,
+				Name:      t.Name,
+				Token:     t.Token,
+				SubURL:    h.cfg.SubURL(t.Token),
+				ClashURL:  h.cfg.SubURL(t.Token),
+				VLESSURL:  h.cfg.VLESSURL(t.Password),
+				QuotaGB:   t.QuotaGB,
+				UsedBytes: t.UsedBytes,
+				CreatedAt: t.CreatedAt,
+				UpdatedAt: t.UpdatedAt,
+				ExpiresAt: t.ExpiresAt,
+				Active:    t.Active,
+				Suspended: t.Suspended,
 			}
 		}
 		writeJSON(w, http.StatusOK, resp)
@@ -488,6 +504,14 @@ func (h *handler) handleTokens(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
+		if req.ExpiryDays != nil && *req.ExpiryDays <= 0 {
+			http.Error(w, "expires_days must be positive", http.StatusBadRequest)
+			return
+		}
+		if req.QuotaGB != nil && *req.QuotaGB <= 0 {
+			http.Error(w, "quota_gb must be positive", http.StatusBadRequest)
+			return
+		}
 		token, err := generateToken()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -498,38 +522,31 @@ func (h *handler) handleTokens(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		port, err := h.db.NextPort(h.cfg.UserPortStart)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+		if err := h.mgr.AddUser(password, token); err != nil {
+			http.Error(w, "failed to register with xray: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		if err := h.mgr.AddServer(port, password, h.cfg.Cipher); err != nil {
-			http.Error(w, "failed to register with ssserver: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		// seed baseline for this port so the first poll doesn't count pre-existing bytes
+		// seed baseline for this user so the first poll doesn't count pre-existing bytes
 		if base, err := h.mgr.Stats(); err == nil {
 			h.statBaseMu.Lock()
-			if _, exists := h.statBase[port]; !exists {
-				h.statBase[port] = base[port]
+			if _, exists := h.statBase[token]; !exists {
+				h.statBase[token] = base[token]
 			}
 			h.statBaseMu.Unlock()
 		}
-		t, err := h.db.CreateToken(req.Name, token, password, port, req.ExpiryDays, req.QuotaGB)
+		t, err := h.db.CreateToken(req.Name, token, password, h.cfg.XrayPort, req.ExpiryDays, req.QuotaGB)
 		if err != nil {
-			// roll back ssmanager registration to avoid port leak
-			if rmErr := h.mgr.RemoveServer(port); rmErr != nil {
-				log.Printf("create token: rollback remove port %d: %v", port, rmErr)
+			if rmErr := h.mgr.RemoveUser(token); rmErr != nil {
+				log.Printf("create token: rollback remove user %s: %v", token, rmErr)
 			}
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		writeJSON(w, http.StatusCreated, map[string]any{
-			"token":       t.Token,
-			"server_port": t.ServerPort,
-			"sub_url":     h.cfg.SubURL(t.Token),
-			"clash_url":   h.cfg.SubURL(t.Token),
-			"ss_url":      h.cfg.SSURL(t.Password, t.ServerPort),
+			"token":     t.Token,
+			"sub_url":   h.cfg.SubURL(t.Token),
+			"clash_url": h.cfg.SubURL(t.Token),
+			"vless_url": h.cfg.VLESSURL(t.Password),
 		})
 
 	default:
@@ -571,19 +588,46 @@ func (h *handler) handleTokenByID(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if req.ResetUsage {
+			t, err := h.db.GetToken(token)
+			if err != nil {
+				http.Error(w, "not found", http.StatusNotFound)
+				return
+			}
+			quotaExhausted := t.QuotaGB != nil && float64(t.UsedBytes) >= *t.QuotaGB*1e9
+			expired := t.ExpiresAt != nil && *t.ExpiresAt <= now()
 			if err := h.db.ResetUsage(token); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			if t, err := h.db.GetActiveToken(token); err == nil {
-				if err := h.mgr.AddServer(t.ServerPort, t.Password, h.cfg.Cipher); err != nil {
-					log.Printf("reset usage: re-register port %d: %v", t.ServerPort, err)
+			if t.Suspended && quotaExhausted && !expired {
+				if err := h.mgr.AddUser(t.Password, t.Token); err != nil {
+					http.Error(w, "failed to add user to xray: "+err.Error(), http.StatusInternalServerError)
+					return
+				}
+				if err := h.db.SetSuspended(token, false); err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+			} else if !t.Suspended && !expired {
+				if err := h.mgr.AddUser(t.Password, t.Token); err != nil {
+					log.Printf("reset usage: ensure user %s: %v", t.Token, err)
+				}
+			}
+			if !expired {
+				if base, err := h.mgr.Stats(); err == nil {
+					h.statBaseMu.Lock()
+					h.statBase[t.Token] = base[t.Token]
+					h.statBaseMu.Unlock()
 				}
 			}
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 		if req.ExtendDays != nil {
+			if *req.ExtendDays <= 0 {
+				http.Error(w, "extend_days must be positive", http.StatusBadRequest)
+				return
+			}
 			t, err := h.db.GetToken(token)
 			if err != nil {
 				http.Error(w, "not found", http.StatusNotFound)
@@ -596,10 +640,10 @@ func (h *handler) handleTokenByID(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if expiredAndSuspended && !quotaAlsoExhausted {
-				if err := h.db.SetSuspended(token, false); err != nil {
+				if err := h.mgr.AddUser(t.Password, t.Token); err != nil {
+					log.Printf("extend: re-register user %s: %v", t.Token, err)
+				} else if err := h.db.SetSuspended(token, false); err != nil {
 					log.Printf("extend: lift suspension %s: %v", token, err)
-				} else if err := h.mgr.AddServer(t.ServerPort, t.Password, h.cfg.Cipher); err != nil {
-					log.Printf("extend: re-register port %d: %v", t.ServerPort, err)
 				}
 			} else if expiredAndSuspended && quotaAlsoExhausted {
 				writeJSON(w, http.StatusOK, map[string]string{
@@ -627,44 +671,55 @@ func (h *handler) handleTokenByID(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			}
-			if err := h.db.SetSuspended(token, *req.Suspended); err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
 			if *req.Suspended {
-				if err := h.mgr.RemoveServer(t.ServerPort); err != nil {
-					log.Printf("suspend: remove port %d: %v", t.ServerPort, err)
+				if err := h.mgr.RemoveUser(t.Token); err != nil {
+					http.Error(w, "failed to remove user from xray: "+err.Error(), http.StatusInternalServerError)
+					return
+				}
+				if err := h.db.SetSuspended(token, true); err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
 				}
 			} else {
-				if err := h.mgr.AddServer(t.ServerPort, t.Password, h.cfg.Cipher); err != nil {
-					log.Printf("resume: add port %d: %v", t.ServerPort, err)
+				if err := h.mgr.AddUser(t.Password, t.Token); err != nil {
+					http.Error(w, "failed to add user to xray: "+err.Error(), http.StatusInternalServerError)
+					return
+				}
+				if err := h.db.SetSuspended(token, false); err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
 				}
 			}
 			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if req.QuotaGB != nil && *req.QuotaGB <= 0 {
+			http.Error(w, "quota_gb must be positive", http.StatusBadRequest)
 			return
 		}
 		if err := h.db.UpdateQuota(token, req.QuotaGB); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		// re-register with ssmanager if suspension was lifted
+		// re-register with Xray if suspension was lifted
 		if t, err := h.db.GetActiveToken(token); err == nil {
-			if err := h.mgr.AddServer(t.ServerPort, t.Password, h.cfg.Cipher); err != nil {
-				log.Printf("quota update: re-register port %d: %v", t.ServerPort, err)
+			if err := h.mgr.AddUser(t.Password, t.Token); err != nil {
+				log.Printf("quota update: re-register user %s: %v", t.Token, err)
 			}
 		}
 		w.WriteHeader(http.StatusNoContent)
 
 	case http.MethodDelete:
-		// try active token first for port cleanup, fall back to any token for hard delete
+		// try active token first for Xray cleanup, fall back to any token for hard delete
 		t, err := h.db.GetToken(token)
 		if err != nil {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
 		if t.Active && !t.Suspended {
-			if err := h.mgr.RemoveServer(t.ServerPort); err != nil {
-				log.Printf("warn: remove port %d: %v", t.ServerPort, err)
+			if err := h.mgr.RemoveUser(t.Token); err != nil {
+				http.Error(w, "failed to remove user from xray: "+err.Error(), http.StatusInternalServerError)
+				return
 			}
 		}
 		if err := h.db.DeleteToken(token); err != nil {

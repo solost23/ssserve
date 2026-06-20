@@ -168,6 +168,23 @@ func (d *DB) VerifyAdmin(username, password string) (*Admin, error) {
 	return &a, nil
 }
 
+func (d *DB) GetAdmin(username string) (*Admin, error) {
+	var a Admin
+	var isOwner int
+	err := d.db.QueryRow(
+		`SELECT username, is_owner, created_at FROM admins WHERE username = ? AND deleted_at IS NULL`,
+		username,
+	).Scan(&a.Username, &isOwner, &a.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	a.IsOwner = isOwner == 1
+	return &a, nil
+}
+
 func (d *DB) ListAdmins() ([]Admin, error) {
 	rows, err := d.db.Query(
 		`SELECT username, is_owner, created_at FROM admins WHERE deleted_at IS NULL ORDER BY created_at`,
@@ -205,18 +222,6 @@ func (d *DB) DeleteAdmin(username string) error {
 }
 
 // --- token methods ---
-
-func (d *DB) NextPort(basePort int) (int, error) {
-	var maxPort int
-	err := d.db.QueryRow(
-		`SELECT COALESCE(MAX(server_port), ?) FROM tokens WHERE deleted_at IS NULL`,
-		basePort-1,
-	).Scan(&maxPort)
-	if err != nil {
-		return 0, err
-	}
-	return maxPort + 1, nil
-}
 
 func (d *DB) CreateToken(name, token, password string, serverPort int, expiryDays *int, quotaGB *float64) (*Token, error) {
 	id := fmt.Sprintf("%d", time.Now().UnixNano())
@@ -298,7 +303,7 @@ func (d *DB) ListTokens() ([]Token, error) {
 	return tokens, rows.Err()
 }
 
-// ActiveTokens returns tokens that should be registered with ssmanager.
+// ActiveTokens returns tokens that should be registered with Xray.
 func (d *DB) ActiveTokens() ([]Token, error) {
 	rows, err := d.db.Query(`
 		SELECT id, name, token, password, server_port, quota_gb, used_bytes,
@@ -324,7 +329,7 @@ func (d *DB) ActiveTokens() ([]Token, error) {
 	return tokens, rows.Err()
 }
 
-// ExpiredActiveTokens returns tokens that are past their expiry but still registered in ssmanager.
+// ExpiredActiveTokens returns tokens that are past their expiry but still registered in Xray.
 func (d *DB) ExpiredActiveTokens() ([]Token, error) {
 	rows, err := d.db.Query(`
 		SELECT id, name, token, password, server_port, quota_gb, used_bytes,
@@ -362,7 +367,7 @@ func (d *DB) SuspendToken(token string) error {
 
 // UpdateQuota sets a new quota and lifts suspension if the new quota is sufficient.
 func (d *DB) UpdateQuota(token string, quotaGB *float64) error {
-	_, err := d.db.Exec(`
+	res, err := d.db.Exec(`
 		UPDATE tokens
 		SET quota_gb   = ?,
 		    suspended  = CASE
@@ -374,7 +379,14 @@ func (d *DB) UpdateQuota(token string, quotaGB *float64) error {
 		WHERE token = ? AND deleted_at IS NULL`,
 		quotaGB, quotaGB, quotaGB, now(), token,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // ChangePassword updates an admin's password after verifying the current one.
@@ -407,7 +419,13 @@ func (d *DB) ChangePassword(username, currentPassword, newPassword string) error
 func (d *DB) ExtendExpiry(token string, days int) error {
 	res, err := d.db.Exec(`
 		UPDATE tokens
-		SET expires_at = datetime(COALESCE(expires_at, datetime('now')), '+' || ? || ' days'),
+		SET expires_at = datetime(
+		        CASE
+		          WHEN expires_at IS NULL OR expires_at <= datetime('now') THEN datetime('now')
+		          ELSE expires_at
+		        END,
+		        '+' || ? || ' days'
+		    ),
 		    updated_at = ?
 		WHERE token = ? AND deleted_at IS NULL`,
 		days, now(), token,
@@ -442,10 +460,10 @@ func (d *DB) SetSuspended(token string, suspend bool) error {
 	return nil
 }
 
-// ResetUsage zeroes used_bytes and lifts quota suspension.
+// ResetUsage zeroes used_bytes without changing suspension state.
 func (d *DB) ResetUsage(token string) error {
 	res, err := d.db.Exec(
-		`UPDATE tokens SET used_bytes = 0, suspended = 0, updated_at = ? WHERE token = ? AND deleted_at IS NULL`,
+		`UPDATE tokens SET used_bytes = 0, updated_at = ? WHERE token = ? AND deleted_at IS NULL`,
 		now(), token,
 	)
 	if err != nil {
@@ -474,15 +492,15 @@ func (d *DB) DeleteToken(token string) error {
 	return nil
 }
 
-func (d *DB) AddStats(increments map[int]int64) error {
-	for port, delta := range increments {
+func (d *DB) AddStats(increments map[string]int64) error {
+	for token, delta := range increments {
 		if delta <= 0 {
 			continue
 		}
 		if _, err := d.db.Exec(
 			`UPDATE tokens SET used_bytes = used_bytes + ?, updated_at = ?
-			 WHERE server_port = ? AND deleted_at IS NULL AND active = 1`,
-			delta, now(), port,
+			 WHERE token = ? AND deleted_at IS NULL AND active = 1`,
+			delta, now(), token,
 		); err != nil {
 			return err
 		}

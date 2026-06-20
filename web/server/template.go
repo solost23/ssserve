@@ -1,8 +1,11 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"strconv"
+)
 
-func renderClash(cfg Config, password string, port int) string {
+func renderClash(cfg Config, uuid string) string {
 	return fmt.Sprintf(`mixed-port: 7890
 allow-lan: false
 mode: rule
@@ -10,12 +13,19 @@ log-level: info
 
 proxies:
   - name: %s
-    type: ss
+    type: vless
     server: %s
     port: %d
-    cipher: %s
-    password: "%s"
+    uuid: %s
+    network: tcp
     udp: true
+    tls: true
+    flow: xtls-rprx-vision
+    servername: %s
+    client-fingerprint: chrome
+    reality-opts:
+      public-key: %s
+      short-id: %s
 
 proxy-groups:
   - name: Proxy
@@ -27,5 +37,18 @@ proxy-groups:
 rules:
   - GEOIP,CN,DIRECT
   - MATCH,Proxy
-`, cfg.NodeName, cfg.ServerAddr, port, cfg.Cipher, password, cfg.NodeName)
+`,
+		yamlQuote(cfg.NodeName),
+		yamlQuote(cfg.ServerAddr),
+		cfg.XrayPort,
+		yamlQuote(uuid),
+		yamlQuote(cfg.XrayServerName),
+		yamlQuote(cfg.XrayPublicKey),
+		yamlQuote(cfg.XrayShortID),
+		yamlQuote(cfg.NodeName),
+	)
+}
+
+func yamlQuote(s string) string {
+	return strconv.Quote(s)
 }

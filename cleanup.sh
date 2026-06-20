@@ -2,7 +2,7 @@
 # Remove all generated runtime files so setup.sh can start fresh.
 
 rm -f config/nginx.conf
-rm -f config/config.json
+rm -f config/xray.json
 
 if [ "$1" = "--with-db" ]; then
     rm -f data/sub.db

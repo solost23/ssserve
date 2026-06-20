@@ -7,7 +7,6 @@ services:
       restart: always
       ports:
         - "80:80"
-        - "443:443"
       volumes:
         - ./config/${NGINX_CONF:-nginx.conf}:/etc/nginx/conf.d/default.conf:ro
         - ./logs/nginx:/var/log/nginx
@@ -16,25 +15,25 @@ services:
       depends_on:
         - subserver
 
-    ssserver:
-      build: ./ssmanager
-      container_name: ssserver
+    xray:
+      image: ghcr.io/xtls/xray-core:latest
+      container_name: xray
       restart: always
       ports:
-        - "${SS_USER_PORT_START:-40200}-${SS_USER_PORT_END:-40299}:${SS_USER_PORT_START:-40200}-${SS_USER_PORT_END:-40299}/tcp"
-        - "${SS_USER_PORT_START:-40200}-${SS_USER_PORT_END:-40299}:${SS_USER_PORT_START:-40200}-${SS_USER_PORT_END:-40299}/udp"
+        - "${XRAY_PORT:-443}:${XRAY_PORT:-443}/tcp"
       expose:
-        - "6001/udp"
+        - "10085"
       volumes:
-        - ./config/config.json:/etc/shadowsocks-rust/config.json:ro
+        - ./config/xray.json:/etc/xray/config.json:ro
       environment:
-        RUST_LOG: warn
+        XRAY_LOCATION_ASSET: /usr/local/share/xray
+      command: ["run", "-config", "/etc/xray/config.json"]
       ulimits:
         nofile:
           soft: 65535
           hard: 65535
       healthcheck:
-        test: ["CMD-SHELL", "echo ping | nc -u -w1 127.0.0.1 6001 | grep -q stat"]
+        test: ["CMD", "xray", "api", "statsquery", "--server=127.0.0.1:10085", "-pattern", "user>>>"]
         interval: 5s
         timeout: 3s
         retries: 12
@@ -51,18 +50,21 @@ services:
       restart: always
       environment:
         SERVER_ADDR: ${SERVER_ADDR}
-        SS_CIPHER: ${SS_CIPHER:-chacha20-ietf-poly1305}
-        SS_NAME: ${SS_NAME:-Tokyo}
-        SS_USER_PORT_START: ${SS_USER_PORT_START:-40200}
+        NODE_NAME: ${NODE_NAME:-Tokyo}
+        XRAY_PORT: ${XRAY_PORT:-443}
+        XRAY_API_ADDR: ${XRAY_API_ADDR:-xray:10085}
+        XRAY_INBOUND_TAG: ${XRAY_INBOUND_TAG:-vless-in}
+        XRAY_PUBLIC_KEY: ${XRAY_PUBLIC_KEY}
+        XRAY_SHORT_ID: ${XRAY_SHORT_ID}
+        XRAY_SERVER_NAME: ${XRAY_SERVER_NAME}
         ADMIN_SECRET: ${ADMIN_SECRET}
-        MANAGER_ADDR: ${MANAGER_ADDR:-ssserver:6001}
         DB_PATH: /data/sub.db
       volumes:
         - ./data:/data
       expose:
         - "8080"
       depends_on:
-        ssserver:
+        xray:
           condition: service_healthy
       logging:
         driver: json-file

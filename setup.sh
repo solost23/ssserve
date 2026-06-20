@@ -16,22 +16,114 @@ if [ -z "$ADMIN_SECRET" ] || [ "$ADMIN_SECRET" = "replace-with-a-long-random-sec
     echo "Error: ADMIN_SECRET is not set in .env"
     exit 1
 fi
+if [ -z "$XRAY_PRIVATE_KEY" ] || [ -z "$XRAY_PUBLIC_KEY" ]; then
+    echo "Error: XRAY_PRIVATE_KEY and XRAY_PUBLIC_KEY are required. Generate them with: docker run --rm ghcr.io/xtls/xray-core x25519"
+    exit 1
+fi
+if [ -z "$XRAY_SHORT_ID" ] || [ -z "$XRAY_SERVER_NAME" ] || [ -z "$XRAY_DEST" ]; then
+    echo "Error: XRAY_SHORT_ID, XRAY_SERVER_NAME and XRAY_DEST are required in .env"
+    exit 1
+fi
 
-# nginx configs
+XRAY_PORT=${XRAY_PORT:-443}
+XRAY_INBOUND_TAG=${XRAY_INBOUND_TAG:-vless-in}
+NODE_NAME=${NODE_NAME:-Tokyo}
+
 cp config/nginx.example.conf config/nginx.conf
 
-# ssmanager config
-cat > config/config.json << EOF
+cat > config/xray.json << EOF
 {
-    "manager_address": "0.0.0.0:6001",
-    "server": "0.0.0.0",
-    "server_port": 40199,
-    "password": "placeholder",
-    "method": "${SS_CIPHER:-chacha20-ietf-poly1305}",
-    "mode": "tcp_and_udp",
-    "fast_open": true,
-    "no_delay": true,
-    "keep_alive": 15
+  "log": {
+    "loglevel": "warning"
+  },
+  "api": {
+    "tag": "api",
+    "services": [
+      "HandlerService",
+      "StatsService"
+    ]
+  },
+  "stats": {},
+  "policy": {
+    "levels": {
+      "0": {
+        "statsUserUplink": true,
+        "statsUserDownlink": true
+      }
+    },
+    "system": {
+      "statsInboundUplink": true,
+      "statsInboundDownlink": true,
+      "statsOutboundUplink": true,
+      "statsOutboundDownlink": true
+    }
+  },
+  "inbounds": [
+    {
+      "tag": "${XRAY_INBOUND_TAG}",
+      "listen": "0.0.0.0",
+      "port": ${XRAY_PORT},
+      "protocol": "vless",
+      "settings": {
+        "clients": [],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "reality",
+        "realitySettings": {
+          "show": false,
+          "dest": "${XRAY_DEST}",
+          "xver": 0,
+          "serverNames": [
+            "${XRAY_SERVER_NAME}"
+          ],
+          "privateKey": "${XRAY_PRIVATE_KEY}",
+          "shortIds": [
+            "${XRAY_SHORT_ID}"
+          ]
+        }
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": [
+          "http",
+          "tls",
+          "quic"
+        ]
+      }
+    },
+    {
+      "tag": "api",
+      "listen": "0.0.0.0",
+      "port": 10085,
+      "protocol": "dokodemo-door",
+      "settings": {
+        "address": "127.0.0.1"
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "direct",
+      "protocol": "freedom"
+    },
+    {
+      "tag": "blocked",
+      "protocol": "blackhole"
+    }
+  ],
+  "routing": {
+    "rules": [
+      {
+        "type": "field",
+        "inboundTag": [
+          "api"
+        ],
+        "outboundTag": "api"
+      }
+    ]
+  }
 }
 EOF
 
@@ -44,4 +136,5 @@ echo "Next steps:"
 echo "  1. Start all:       docker compose up -d --build"
 echo ""
 echo "Admin UI: http://${SERVER_ADDR}/"
+echo "Proxy:    ${SERVER_ADDR}:${XRAY_PORT} (${NODE_NAME})"
 echo "Login with ADMIN_SECRET from your .env"

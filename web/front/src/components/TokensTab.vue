@@ -228,7 +228,7 @@ onMounted(load)
                 </template>
                 <template v-else>
                   <strong class="token-name" @dblclick="startRename(t)" title="双击重命名">{{ t.name }}</strong>
-                  <span class="token-port">:{{ t.server_port }}</span>
+                  <span class="token-port">VLESS</span>
                 </template>
               </td>
               <td><span class="badge" :class="statusInfo(t).cls">{{ statusInfo(t).label }}</span></td>
@@ -263,10 +263,10 @@ onMounted(load)
                     <button class="btn-ghost copy-btn" @click="copy(t.clash_url || t.sub_url); showToast('已复制')">复制</button>
                   </div>
                   <div class="sub-row">
-                    <span class="sub-label">SS</span>
-                    <span class="sub-url">{{ t.ss_url }}</span>
-                    <button class="btn-ghost copy-btn" @click="copy(t.ss_url); showToast('已复制')">复制</button>
-                    <button class="btn-ghost copy-btn" @click="qrTarget = { url: t.ss_url, label: t.name }">二维码</button>
+                    <span class="sub-label">VLESS</span>
+                    <span class="sub-url">{{ t.vless_url }}</span>
+                    <button class="btn-ghost copy-btn" @click="copy(t.vless_url); showToast('已复制')">复制</button>
+                    <button class="btn-ghost copy-btn" @click="qrTarget = { url: t.vless_url, label: t.name }">二维码</button>
                   </div>
                 </div>
               </td>

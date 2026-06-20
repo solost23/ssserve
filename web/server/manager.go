@@ -3,96 +3,130 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"net"
+	"os"
+	"os/exec"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
 
 type Manager struct {
-	addr string
+	apiAddr    string
+	inboundTag string
 }
 
-func NewManager(addr string) *Manager {
-	return &Manager{addr: addr}
+func NewManager(apiAddr, inboundTag string) *Manager {
+	return &Manager{apiAddr: apiAddr, inboundTag: inboundTag}
 }
 
-func (m *Manager) AddServer(port int, password, method string) error {
-	payload, _ := json.Marshal(map[string]any{
-		"server_port": port,
-		"password":    password,
-		"method":      method,
-		"mode":        "tcp_and_udp",
-	})
-	resp, err := m.send("add: " + string(payload))
+func (m *Manager) AddUser(uuid, email string) error {
+	cfg, err := os.CreateTemp("", "xray-user-*.json")
 	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(resp) != "ok" {
-		return fmt.Errorf("manager add: %s", resp)
-	}
-	return nil
-}
+	defer os.Remove(cfg.Name())
+	defer cfg.Close()
 
-func (m *Manager) RemoveServer(port int) error {
-	payload, _ := json.Marshal(map[string]any{"server_port": port})
-	resp, err := m.send("remove: " + string(payload))
-	if err != nil {
+	payload := map[string]any{
+		"inbounds": []map[string]any{
+			{
+				"tag":      m.inboundTag,
+				"protocol": "vless",
+				"settings": map[string]any{
+					"clients": []map[string]any{
+						{
+							"id":         uuid,
+							"email":      email,
+							"flow":       "xtls-rprx-vision",
+							"encryption": "none",
+						},
+					},
+				},
+			},
+		},
+	}
+	if err := json.NewEncoder(cfg).Encode(payload); err != nil {
 		return err
 	}
-	if strings.TrimSpace(resp) != "ok" {
-		return fmt.Errorf("manager remove: %s", resp)
+	if err := cfg.Close(); err != nil {
+		return err
 	}
-	return nil
-}
 
-// Stats returns cumulative bytes per port since ssserver last started.
-func (m *Manager) Stats() (map[int]int64, error) {
-	conn, err := net.Dial("udp", m.addr)
+	out, err := m.run("adu", cfg.Name())
 	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
-	conn.SetDeadline(time.Now().Add(3 * time.Second))
-
-	if _, err := conn.Write([]byte("ping")); err != nil {
-		return nil, err
-	}
-
-	buf := make([]byte, 65535)
-	n, err := conn.Read(buf)
-	if err != nil {
-		return nil, err
-	}
-
-	stats := make(map[int]int64)
-	s := string(buf[:n])
-	if strings.HasPrefix(s, "stat: ") {
-		var raw map[string]int64
-		if jsonErr := json.Unmarshal([]byte(strings.TrimPrefix(s, "stat: ")), &raw); jsonErr == nil {
-			for k, v := range raw {
-				var port int
-				fmt.Sscanf(k, "%d", &port)
-				stats[port] = v
-			}
+		if strings.Contains(out, "already exists") {
+			return nil
 		}
+		return fmt.Errorf("xray add user: %w: %s", err, out)
+	}
+	return nil
+}
+
+func (m *Manager) RemoveUser(email string) error {
+	out, err := m.run("rmu", "-tag="+m.inboundTag, email)
+	if err != nil {
+		if strings.Contains(out, "not found") {
+			return nil
+		}
+		return fmt.Errorf("xray remove user: %w: %s", err, out)
+	}
+	return nil
+}
+
+func (m *Manager) Stats() (map[string]int64, error) {
+	out, err := m.run("statsquery", "-pattern", "user>>>")
+	if err != nil {
+		return nil, fmt.Errorf("xray stats: %w: %s", err, out)
+	}
+
+	stats := make(map[string]int64)
+	var resp struct {
+		Stat []struct {
+			Name  string `json:"name"`
+			Value int64  `json:"value"`
+		} `json:"stat"`
+	}
+	if err := json.Unmarshal([]byte(out), &resp); err == nil && len(resp.Stat) > 0 {
+		for _, s := range resp.Stat {
+			addStat(stats, s.Name, s.Value)
+		}
+		return stats, nil
+	}
+
+	re := regexp.MustCompile(`(?s)name:\s*"([^"]+)".*?value:\s*([0-9]+)`)
+	for _, match := range re.FindAllStringSubmatch(out, -1) {
+		v, _ := strconv.ParseInt(match[2], 10, 64)
+		addStat(stats, match[1], v)
 	}
 	return stats, nil
 }
 
-func (m *Manager) send(cmd string) (string, error) {
-	conn, err := net.Dial("udp", m.addr)
-	if err != nil {
-		return "", err
+func addStat(stats map[string]int64, name string, value int64) {
+	parts := strings.Split(name, ">>>")
+	if len(parts) < 4 || parts[0] != "user" {
+		return
 	}
-	defer conn.Close()
-	conn.SetDeadline(time.Now().Add(3 * time.Second))
-	if _, err := conn.Write([]byte(cmd)); err != nil {
-		return "", err
+	stats[parts[1]] += value
+}
+
+func (m *Manager) run(args ...string) (string, error) {
+	base := []string{"api", args[0], "--server=" + m.apiAddr, "--timeout=3"}
+	base = append(base, args[1:]...)
+	cmd := exec.Command("xray", base...)
+	var out strings.Builder
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	errCh := make(chan error, 1)
+	if err := cmd.Start(); err != nil {
+		return out.String(), err
 	}
-	buf := make([]byte, 65535)
-	n, err := conn.Read(buf)
-	if err != nil {
-		return "", err
+	go func() { errCh <- cmd.Wait() }()
+	select {
+	case err := <-errCh:
+		return out.String(), err
+	case <-time.After(5 * time.Second):
+		_ = cmd.Process.Kill()
+		return out.String(), fmt.Errorf("timeout")
 	}
-	return string(buf[:n]), nil
 }
