@@ -30,10 +30,10 @@ openssl rand -hex 32
 把生成结果填入 `.env`。至少需要这些变量：
 
 ```env
-SERVER_ADDR=38.47.105.9
+SERVER_ADDR=202.182.111.110.sslip.io
 NODE_NAME=Tokyo
 ADMIN_SECRET=replace-with-a-long-random-secret
-XRAY_PORT=443
+XRAY_PORT=8443
 XRAY_PRIVATE_KEY=replace-with-reality-private-key
 XRAY_PUBLIC_KEY=replace-with-reality-public-key
 XRAY_SHORT_ID=replacehex
@@ -41,7 +41,7 @@ XRAY_SERVER_NAME=www.cloudflare.com
 XRAY_DEST=www.cloudflare.com:443
 TROJAN_ENABLED=false
 TROJAN_DOMAIN=202.182.111.110.sslip.io
-TROJAN_PORT=8443
+TROJAN_PORT=443
 ```
 
 `SERVER_ADDR` 会用于：
@@ -49,6 +49,8 @@ TROJAN_PORT=8443
 - 管理界面地址：`http://SERVER_ADDR/`
 - 订阅链接：`http://SERVER_ADDR/sub/<token>/clash.yaml`
 - 客户端节点里的 `server`
+
+如果客户端应通过域名连接，`SERVER_ADDR` 必须填写域名，不能填写服务器 IP。`XRAY_PORT` 是 VLESS REALITY 的公网端口；如果把 Trojan + TLS 放在 443，则 `XRAY_PORT` 需要使用另一个端口，例如 8443。
 
 如果要给小火箭使用 Trojan + TLS，先让 `TROJAN_DOMAIN` 解析到服务器，并准备证书：
 
