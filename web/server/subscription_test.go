@@ -1,0 +1,58 @@
+package main
+
+import (
+	"net/url"
+	"strings"
+	"testing"
+)
+
+func testConfig() Config {
+	return Config{
+		ServerAddr:     "202.182.111.110",
+		NodeName:       "Tokyo",
+		XrayPort:       443,
+		XrayPublicKey:  "public-key",
+		XrayShortID:    "f919438ba90e7ae3",
+		XrayServerName: "www.cloudflare.com",
+	}
+}
+
+func TestVLESSURLIncludesRealityOptions(t *testing.T) {
+	raw := testConfig().VLESSURL("1a078af0-1bb6-498b-9896-4651db5cbaf4")
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		t.Fatalf("parse url: %v", err)
+	}
+
+	q := parsed.Query()
+	for key, want := range map[string]string{
+		"encryption": "none",
+		"flow":       "xtls-rprx-vision",
+		"security":   "reality",
+		"sni":        "www.cloudflare.com",
+		"fp":         "chrome",
+		"pbk":        "public-key",
+		"sid":        "f919438ba90e7ae3",
+		"spx":        "/",
+		"type":       "tcp",
+	} {
+		if got := q.Get(key); got != want {
+			t.Fatalf("query %s = %q, want %q", key, got, want)
+		}
+	}
+}
+
+func TestRenderClashIncludesRealityOptions(t *testing.T) {
+	yaml := renderClash(testConfig(), "1a078af0-1bb6-498b-9896-4651db5cbaf4")
+
+	for _, want := range []string{
+		`servername: "www.cloudflare.com"`,
+		`public-key: "public-key"`,
+		`short-id: "f919438ba90e7ae3"`,
+		`spider-x: "/"`,
+	} {
+		if !strings.Contains(yaml, want) {
+			t.Fatalf("clash yaml missing %q:\n%s", want, yaml)
+		}
+	}
+}

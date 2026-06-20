@@ -26,6 +26,7 @@ proxies:
     reality-opts:
       public-key: %s
       short-id: %s
+      spider-x: "/"
 
 proxy-groups:
   - name: Proxy

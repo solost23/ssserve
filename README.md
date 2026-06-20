@@ -37,8 +37,8 @@ XRAY_PORT=443
 XRAY_PRIVATE_KEY=replace-with-reality-private-key
 XRAY_PUBLIC_KEY=replace-with-reality-public-key
 XRAY_SHORT_ID=replacehex
-XRAY_SERVER_NAME=www.microsoft.com
-XRAY_DEST=www.microsoft.com:443
+XRAY_SERVER_NAME=www.cloudflare.com
+XRAY_DEST=www.cloudflare.com:443
 ```
 
 `SERVER_ADDR` 会用于：

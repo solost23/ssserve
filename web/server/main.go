@@ -89,6 +89,7 @@ func (c Config) VLESSURL(uuid string) string {
 	q.Set("fp", "chrome")
 	q.Set("pbk", c.XrayPublicKey)
 	q.Set("sid", c.XrayShortID)
+	q.Set("spx", "/")
 	q.Set("type", "tcp")
 	return fmt.Sprintf("vless://%s@%s:%d?%s#%s", uuid, c.ServerAddr, c.XrayPort, q.Encode(), url.QueryEscape(c.NodeName))
 }
@@ -106,6 +107,8 @@ func generatePassword() (string, error) {
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
 	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
 }
 
@@ -126,7 +129,7 @@ func main() {
 		log.Println("created owner account: admin")
 	}
 
-	mgr := NewManager(cfg.XrayAPIAddr, cfg.XrayInboundTag)
+	mgr := NewManager(cfg.XrayAPIAddr, cfg.XrayInboundTag, cfg.XrayPort)
 	h := &handler{cfg: cfg, db: db, mgr: mgr, statBase: make(map[string]int64)}
 
 	h.syncToManager()

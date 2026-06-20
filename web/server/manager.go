@@ -12,12 +12,13 @@ import (
 )
 
 type Manager struct {
-	apiAddr    string
-	inboundTag string
+	apiAddr     string
+	inboundTag  string
+	inboundPort int
 }
 
-func NewManager(apiAddr, inboundTag string) *Manager {
-	return &Manager{apiAddr: apiAddr, inboundTag: inboundTag}
+func NewManager(apiAddr, inboundTag string, inboundPort int) *Manager {
+	return &Manager{apiAddr: apiAddr, inboundTag: inboundTag, inboundPort: inboundPort}
 }
 
 func (m *Manager) AddUser(uuid, email string) error {
@@ -28,24 +29,7 @@ func (m *Manager) AddUser(uuid, email string) error {
 	defer os.Remove(cfg.Name())
 	defer cfg.Close()
 
-	payload := map[string]any{
-		"inbounds": []map[string]any{
-			{
-				"tag":      m.inboundTag,
-				"protocol": "vless",
-				"settings": map[string]any{
-					"clients": []map[string]any{
-						{
-							"id":         uuid,
-							"email":      email,
-							"flow":       "xtls-rprx-vision",
-							"encryption": "none",
-						},
-					},
-				},
-			},
-		},
-	}
+	payload := buildAddUserPayload(m.inboundTag, m.inboundPort, uuid, email)
 	if err := json.NewEncoder(cfg).Encode(payload); err != nil {
 		return err
 	}
@@ -61,6 +45,29 @@ func (m *Manager) AddUser(uuid, email string) error {
 		return fmt.Errorf("xray add user: %w: %s", err, out)
 	}
 	return nil
+}
+
+func buildAddUserPayload(inboundTag string, inboundPort int, uuid, email string) map[string]any {
+	return map[string]any{
+		"inbounds": []map[string]any{
+			{
+				"tag":      inboundTag,
+				"listen":   "0.0.0.0",
+				"port":     inboundPort,
+				"protocol": "vless",
+				"settings": map[string]any{
+					"clients": []map[string]any{
+						{
+							"id":    uuid,
+							"email": email,
+							"flow":  "xtls-rprx-vision",
+						},
+					},
+					"decryption": "none",
+				},
+			},
+		},
+	}
 }
 
 func (m *Manager) RemoveUser(email string) error {
