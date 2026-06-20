@@ -12,16 +12,47 @@ import (
 )
 
 type Manager struct {
-	apiAddr     string
-	inboundTag  string
-	inboundPort int
+	apiAddr       string
+	vlessInbound  string
+	vlessPort     int
+	trojanEnabled bool
+	trojanInbound string
+	trojanPort    int
 }
 
-func NewManager(apiAddr, inboundTag string, inboundPort int) *Manager {
-	return &Manager{apiAddr: apiAddr, inboundTag: inboundTag, inboundPort: inboundPort}
+type ManagerConfig struct {
+	APIAddr       string
+	VLESSInbound  string
+	VLESSPort     int
+	TrojanEnabled bool
+	TrojanInbound string
+	TrojanPort    int
+}
+
+func NewManager(cfg ManagerConfig) *Manager {
+	return &Manager{
+		apiAddr:       cfg.APIAddr,
+		vlessInbound:  cfg.VLESSInbound,
+		vlessPort:     cfg.VLESSPort,
+		trojanEnabled: cfg.TrojanEnabled,
+		trojanInbound: cfg.TrojanInbound,
+		trojanPort:    cfg.TrojanPort,
+	}
 }
 
 func (m *Manager) AddUser(uuid, email string) error {
+	if err := m.addUser(buildVLESSAddUserPayload(m.vlessInbound, m.vlessPort, uuid, email)); err != nil {
+		return err
+	}
+	if m.trojanEnabled {
+		if err := m.addUser(buildTrojanAddUserPayload(m.trojanInbound, m.trojanPort, uuid, email)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *Manager) addUser(payload map[string]any) error {
 	cfg, err := os.CreateTemp("", "xray-user-*.json")
 	if err != nil {
 		return err
@@ -29,7 +60,6 @@ func (m *Manager) AddUser(uuid, email string) error {
 	defer os.Remove(cfg.Name())
 	defer cfg.Close()
 
-	payload := buildAddUserPayload(m.inboundTag, m.inboundPort, uuid, email)
 	if err := json.NewEncoder(cfg).Encode(payload); err != nil {
 		return err
 	}
@@ -47,7 +77,7 @@ func (m *Manager) AddUser(uuid, email string) error {
 	return nil
 }
 
-func buildAddUserPayload(inboundTag string, inboundPort int, uuid, email string) map[string]any {
+func buildVLESSAddUserPayload(inboundTag string, inboundPort int, uuid, email string) map[string]any {
 	return map[string]any{
 		"inbounds": []map[string]any{
 			{
@@ -70,8 +100,41 @@ func buildAddUserPayload(inboundTag string, inboundPort int, uuid, email string)
 	}
 }
 
+func buildTrojanAddUserPayload(inboundTag string, inboundPort int, password, email string) map[string]any {
+	return map[string]any{
+		"inbounds": []map[string]any{
+			{
+				"tag":      inboundTag,
+				"listen":   "0.0.0.0",
+				"port":     inboundPort,
+				"protocol": "trojan",
+				"settings": map[string]any{
+					"clients": []map[string]any{
+						{
+							"password": password,
+							"email":    email,
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
 func (m *Manager) RemoveUser(email string) error {
-	out, err := m.run("rmu", "-tag="+m.inboundTag, email)
+	if err := m.removeUser(m.vlessInbound, email); err != nil {
+		return err
+	}
+	if m.trojanEnabled {
+		if err := m.removeUser(m.trojanInbound, email); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *Manager) removeUser(inboundTag, email string) error {
+	out, err := m.run("rmu", "-tag="+inboundTag, email)
 	if err != nil {
 		if strings.Contains(out, "not found") {
 			return nil

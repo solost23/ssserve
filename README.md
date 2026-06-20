@@ -39,6 +39,9 @@ XRAY_PUBLIC_KEY=replace-with-reality-public-key
 XRAY_SHORT_ID=replacehex
 XRAY_SERVER_NAME=www.cloudflare.com
 XRAY_DEST=www.cloudflare.com:443
+TROJAN_ENABLED=false
+TROJAN_DOMAIN=202.182.111.110.sslip.io
+TROJAN_PORT=8443
 ```
 
 `SERVER_ADDR` 会用于：
@@ -46,6 +49,27 @@ XRAY_DEST=www.cloudflare.com:443
 - 管理界面地址：`http://SERVER_ADDR/`
 - 订阅链接：`http://SERVER_ADDR/sub/<token>/clash.yaml`
 - 客户端节点里的 `server`
+
+如果要给小火箭使用 Trojan + TLS，先让 `TROJAN_DOMAIN` 解析到服务器，并准备证书：
+
+```bash
+mkdir -p certbot/www certbot/conf
+docker run --rm \
+  -v "$(pwd)/certbot/conf:/etc/letsencrypt" \
+  -v "$(pwd)/certbot/www:/var/www/certbot" \
+  certbot/certbot certonly --webroot \
+  -w /var/www/certbot \
+  -d 202.182.111.110.sslip.io \
+  --agree-tos --register-unsafely-without-email
+```
+
+然后在 `.env` 里启用：
+
+```env
+TROJAN_ENABLED=true
+TROJAN_DOMAIN=202.182.111.110.sslip.io
+TROJAN_PORT=8443
+```
 
 ## 生成配置
 

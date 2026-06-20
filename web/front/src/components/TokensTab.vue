@@ -268,6 +268,12 @@ onMounted(load)
                     <button class="btn-ghost copy-btn" @click="copy(t.vless_url); showToast('已复制')">复制</button>
                     <button class="btn-ghost copy-btn" @click="qrTarget = { url: t.vless_url, label: t.name }">二维码</button>
                   </div>
+                  <div v-if="t.trojan_url" class="sub-row">
+                    <span class="sub-label">Shadowrocket</span>
+                    <span class="sub-url">{{ t.trojan_url }}</span>
+                    <button class="btn-ghost copy-btn" @click="copy(t.trojan_url); showToast('已复制')">复制</button>
+                    <button class="btn-ghost copy-btn" @click="qrTarget = { url: t.trojan_url, label: t.name }">二维码</button>
+                  </div>
                 </div>
               </td>
               <td>

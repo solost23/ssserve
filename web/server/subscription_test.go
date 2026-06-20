@@ -14,6 +14,9 @@ func testConfig() Config {
 		XrayPublicKey:  "public-key",
 		XrayShortID:    "f919438ba90e7ae3",
 		XrayServerName: "www.cloudflare.com",
+		TrojanEnabled:  true,
+		TrojanDomain:   "202.182.111.110.sslip.io",
+		TrojanPort:     8443,
 	}
 }
 
@@ -39,6 +42,27 @@ func TestVLESSURLIncludesRealityOptions(t *testing.T) {
 		if got := q.Get(key); got != want {
 			t.Fatalf("query %s = %q, want %q", key, got, want)
 		}
+	}
+}
+
+func TestTrojanURL(t *testing.T) {
+	raw := testConfig().TrojanURL("7eb14c94-37e7-4a17-9af5-40535c927af9")
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		t.Fatalf("parse url: %v", err)
+	}
+
+	if parsed.Scheme != "trojan" {
+		t.Fatalf("scheme = %q, want trojan", parsed.Scheme)
+	}
+	if parsed.User.Username() != "7eb14c94-37e7-4a17-9af5-40535c927af9" {
+		t.Fatalf("username = %q", parsed.User.Username())
+	}
+	if parsed.Host != "202.182.111.110.sslip.io:8443" {
+		t.Fatalf("host = %q", parsed.Host)
+	}
+	if got := parsed.Query().Get("sni"); got != "202.182.111.110.sslip.io" {
+		t.Fatalf("sni = %q", got)
 	}
 }
 

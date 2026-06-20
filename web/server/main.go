@@ -30,6 +30,10 @@ type Config struct {
 	XrayPublicKey  string
 	XrayShortID    string
 	XrayServerName string
+	TrojanEnabled  bool
+	TrojanDomain   string
+	TrojanPort     int
+	TrojanTag      string
 }
 
 func loadConfig() Config {
@@ -44,6 +48,10 @@ func loadConfig() Config {
 		XrayPublicKey:  os.Getenv("XRAY_PUBLIC_KEY"),
 		XrayShortID:    os.Getenv("XRAY_SHORT_ID"),
 		XrayServerName: os.Getenv("XRAY_SERVER_NAME"),
+		TrojanEnabled:  parseBoolEnv(os.Getenv("TROJAN_ENABLED")),
+		TrojanDomain:   os.Getenv("TROJAN_DOMAIN"),
+		TrojanPort:     443,
+		TrojanTag:      getEnvOr("TROJAN_INBOUND_TAG", "trojan-in"),
 	}
 	if v := os.Getenv("XRAY_PORT"); v != "" {
 		port, err := strconv.Atoi(v)
@@ -51,6 +59,13 @@ func loadConfig() Config {
 			log.Fatal("XRAY_PORT must be an integer between 1 and 65535")
 		}
 		c.XrayPort = port
+	}
+	if v := os.Getenv("TROJAN_PORT"); v != "" {
+		port, err := strconv.Atoi(v)
+		if err != nil || port < 1 || port > 65535 {
+			log.Fatal("TROJAN_PORT must be an integer between 1 and 65535")
+		}
+		c.TrojanPort = port
 	}
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
@@ -66,6 +81,9 @@ func loadConfig() Config {
 	if c.XrayPublicKey == "" || c.XrayShortID == "" || c.XrayServerName == "" {
 		log.Fatal("XRAY_PUBLIC_KEY, XRAY_SHORT_ID and XRAY_SERVER_NAME are required")
 	}
+	if c.TrojanEnabled && c.TrojanDomain == "" {
+		log.Fatal("TROJAN_DOMAIN is required when TROJAN_ENABLED=true")
+	}
 	return c
 }
 
@@ -74,6 +92,15 @@ func getEnvOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+func parseBoolEnv(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func (c Config) SubURL(token string) string {
@@ -92,6 +119,15 @@ func (c Config) VLESSURL(uuid string) string {
 	q.Set("spx", "/")
 	q.Set("type", "tcp")
 	return fmt.Sprintf("vless://%s@%s:%d?%s#%s", uuid, c.ServerAddr, c.XrayPort, q.Encode(), url.QueryEscape(c.NodeName))
+}
+
+func (c Config) TrojanURL(password string) string {
+	if !c.TrojanEnabled {
+		return ""
+	}
+	q := url.Values{}
+	q.Set("sni", c.TrojanDomain)
+	return fmt.Sprintf("trojan://%s@%s:%d?%s#%s", url.QueryEscape(password), c.TrojanDomain, c.TrojanPort, q.Encode(), url.QueryEscape(c.NodeName))
 }
 
 func generateToken() (string, error) {
@@ -129,7 +165,14 @@ func main() {
 		log.Println("created owner account: admin")
 	}
 
-	mgr := NewManager(cfg.XrayAPIAddr, cfg.XrayInboundTag, cfg.XrayPort)
+	mgr := NewManager(ManagerConfig{
+		APIAddr:       cfg.XrayAPIAddr,
+		VLESSInbound:  cfg.XrayInboundTag,
+		VLESSPort:     cfg.XrayPort,
+		TrojanEnabled: cfg.TrojanEnabled,
+		TrojanInbound: cfg.TrojanTag,
+		TrojanPort:    cfg.TrojanPort,
+	})
 	h := &handler{cfg: cfg, db: db, mgr: mgr, statBase: make(map[string]int64)}
 
 	h.syncToManager()
@@ -469,6 +512,7 @@ func (h *handler) handleTokens(w http.ResponseWriter, r *http.Request) {
 			SubURL    string   `json:"sub_url"`
 			ClashURL  string   `json:"clash_url"`
 			VLESSURL  string   `json:"vless_url"`
+			TrojanURL string   `json:"trojan_url"`
 			QuotaGB   *float64 `json:"quota_gb"`
 			UsedBytes int64    `json:"used_bytes"`
 			CreatedAt string   `json:"created_at"`
@@ -486,6 +530,7 @@ func (h *handler) handleTokens(w http.ResponseWriter, r *http.Request) {
 				SubURL:    h.cfg.SubURL(t.Token),
 				ClashURL:  h.cfg.SubURL(t.Token),
 				VLESSURL:  h.cfg.VLESSURL(t.Password),
+				TrojanURL: h.cfg.TrojanURL(t.Password),
 				QuotaGB:   t.QuotaGB,
 				UsedBytes: t.UsedBytes,
 				CreatedAt: t.CreatedAt,
@@ -546,10 +591,11 @@ func (h *handler) handleTokens(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusCreated, map[string]any{
-			"token":     t.Token,
-			"sub_url":   h.cfg.SubURL(t.Token),
-			"clash_url": h.cfg.SubURL(t.Token),
-			"vless_url": h.cfg.VLESSURL(t.Password),
+			"token":      t.Token,
+			"sub_url":    h.cfg.SubURL(t.Token),
+			"clash_url":  h.cfg.SubURL(t.Token),
+			"vless_url":  h.cfg.VLESSURL(t.Password),
+			"trojan_url": h.cfg.TrojanURL(t.Password),
 		})
 
 	default:

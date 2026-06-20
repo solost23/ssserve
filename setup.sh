@@ -28,6 +28,51 @@ fi
 XRAY_PORT=${XRAY_PORT:-443}
 XRAY_INBOUND_TAG=${XRAY_INBOUND_TAG:-vless-in}
 NODE_NAME=${NODE_NAME:-Tokyo}
+TROJAN_ENABLED=${TROJAN_ENABLED:-false}
+TROJAN_PORT=${TROJAN_PORT:-8443}
+TROJAN_INBOUND_TAG=${TROJAN_INBOUND_TAG:-trojan-in}
+
+TROJAN_INBOUND_JSON=""
+if [ "$TROJAN_ENABLED" = "true" ] || [ "$TROJAN_ENABLED" = "1" ]; then
+    if [ -z "$TROJAN_DOMAIN" ]; then
+        echo "Error: TROJAN_DOMAIN is required when TROJAN_ENABLED=true"
+        exit 1
+    fi
+    TROJAN_INBOUND_JSON=$(cat << EOF
+    ,
+    {
+      "tag": "${TROJAN_INBOUND_TAG}",
+      "listen": "0.0.0.0",
+      "port": ${TROJAN_PORT},
+      "protocol": "trojan",
+      "settings": {
+        "clients": []
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "tls",
+        "tlsSettings": {
+          "serverName": "${TROJAN_DOMAIN}",
+          "certificates": [
+            {
+              "certificateFile": "/etc/letsencrypt/live/${TROJAN_DOMAIN}/fullchain.pem",
+              "keyFile": "/etc/letsencrypt/live/${TROJAN_DOMAIN}/privkey.pem"
+            }
+          ]
+        }
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": [
+          "http",
+          "tls",
+          "quic"
+        ]
+      }
+    }
+EOF
+)
+fi
 
 cp config/nginx.example.conf config/nginx.conf
 
@@ -101,7 +146,7 @@ cat > config/xray.json << EOF
       "settings": {
         "address": "127.0.0.1"
       }
-    }
+    }${TROJAN_INBOUND_JSON}
   ],
   "outbounds": [
     {
