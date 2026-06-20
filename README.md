@@ -66,9 +66,10 @@ docker run --rm \
 然后在 `.env` 里启用：
 
 ```env
+XRAY_PORT=8443
 TROJAN_ENABLED=true
 TROJAN_DOMAIN=202.182.111.110.sslip.io
-TROJAN_PORT=8443
+TROJAN_PORT=443
 ```
 
 ## 生成配置

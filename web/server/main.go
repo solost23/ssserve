@@ -50,7 +50,7 @@ func loadConfig() Config {
 		XrayServerName: os.Getenv("XRAY_SERVER_NAME"),
 		TrojanEnabled:  parseBoolEnv(os.Getenv("TROJAN_ENABLED")),
 		TrojanDomain:   os.Getenv("TROJAN_DOMAIN"),
-		TrojanPort:     443,
+		TrojanPort:     8443,
 		TrojanTag:      getEnvOr("TROJAN_INBOUND_TAG", "trojan-in"),
 	}
 	if v := os.Getenv("XRAY_PORT"); v != "" {
