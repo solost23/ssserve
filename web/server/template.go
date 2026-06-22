@@ -36,6 +36,7 @@ proxies:
 proxy-groups:
   - name: Proxy
     type: select
+    url: https://www.gstatic.com/generate_204
     proxies:
       - %s
       - DIRECT
