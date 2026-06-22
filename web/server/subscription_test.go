@@ -80,3 +80,36 @@ func TestRenderClashIncludesRealityOptions(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderClashDirectsServerHostsBeforeCatchAll(t *testing.T) {
+	cfg := testConfig()
+	cfg.ServerAddr = "sub.example.com"
+	cfg.TrojanDomain = "202.182.111.110.sslip.io"
+
+	yaml := renderClash(cfg, "1a078af0-1bb6-498b-9896-4651db5cbaf4")
+	for _, want := range []string{
+		`  - DOMAIN,sub.example.com,DIRECT`,
+		`  - DOMAIN,202.182.111.110.sslip.io,DIRECT`,
+	} {
+		if !strings.Contains(yaml, want) {
+			t.Fatalf("clash yaml missing direct rule %q:\n%s", want, yaml)
+		}
+	}
+
+	directIdx := strings.Index(yaml, `  - DOMAIN,sub.example.com,DIRECT`)
+	matchIdx := strings.Index(yaml, `  - MATCH,Proxy`)
+	if directIdx == -1 || matchIdx == -1 || directIdx > matchIdx {
+		t.Fatalf("direct rule must appear before MATCH:\n%s", yaml)
+	}
+}
+
+func TestRenderDirectRulesNormalizesIPAndDeduplicates(t *testing.T) {
+	cfg := testConfig()
+	cfg.ServerAddr = "http://[2001:db8::1]:8080/"
+	cfg.TrojanDomain = "HTTP://[2001:db8::1]:8443/"
+
+	rules := renderDirectRules(cfg)
+	if want := "  - IP-CIDR6,2001:db8::1/128,DIRECT,no-resolve\n"; rules != want {
+		t.Fatalf("rules = %q, want %q", rules, want)
+	}
+}
