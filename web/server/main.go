@@ -229,6 +229,13 @@ func (h *handler) markFullSync() {
 	h.regMu.Unlock()
 }
 
+func (h *handler) resetRegistered() {
+	h.regMu.Lock()
+	h.registered = make(map[string]struct{})
+	h.lastFullSync = time.Time{}
+	h.regMu.Unlock()
+}
+
 func (h *handler) ensureRegistered(password, token string, force bool) (bool, error) {
 	if !force {
 		h.regMu.Lock()
@@ -305,6 +312,12 @@ func (h *handler) pollStats() {
 
 	tokens, err := h.db.ActiveTokens()
 	if err != nil {
+		return
+	}
+	if len(tokens) > 0 && len(stats) == 0 {
+		log.Printf("stats: active tokens exist but xray has no user stats; forcing resync")
+		h.resetRegistered()
+		go h.syncToManager()
 		return
 	}
 	for _, t := range tokens {

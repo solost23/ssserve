@@ -77,6 +77,25 @@ func TestRenderClashDirectsServerHostsBeforeCatchAll(t *testing.T) {
 	}
 }
 
+func TestRenderClashDirectsPrivateNetworksBeforeCatchAll(t *testing.T) {
+	yaml := renderClash(testConfig(), "1a078af0-1bb6-498b-9896-4651db5cbaf4")
+
+	for _, want := range []string{
+		`  - DOMAIN,localhost,DIRECT`,
+		`  - DOMAIN-SUFFIX,local,DIRECT`,
+		`  - IP-CIDR,10.0.0.0/8,DIRECT,no-resolve`,
+		`  - IP-CIDR,172.16.0.0/12,DIRECT,no-resolve`,
+		`  - IP-CIDR,192.168.0.0/16,DIRECT,no-resolve`,
+		`  - IP-CIDR6,fc00::/7,DIRECT,no-resolve`,
+	} {
+		directIdx := strings.Index(yaml, want)
+		matchIdx := strings.Index(yaml, `  - MATCH,Proxy`)
+		if directIdx == -1 || matchIdx == -1 || directIdx > matchIdx {
+			t.Fatalf("private direct rule %q must appear before MATCH:\n%s", want, yaml)
+		}
+	}
+}
+
 func TestRenderDirectRulesNormalizesIPAndDeduplicates(t *testing.T) {
 	cfg := testConfig()
 	cfg.ServerAddr = "http://[2001:db8::1]:8080/"
