@@ -30,10 +30,7 @@ type Config struct {
 	XrayPublicKey  string
 	XrayShortID    string
 	XrayServerName string
-	TrojanEnabled  bool
-	TrojanDomain   string
-	TrojanPort     int
-	TrojanTag      string
+	FullSyncEvery  time.Duration
 }
 
 func loadConfig() Config {
@@ -48,10 +45,7 @@ func loadConfig() Config {
 		XrayPublicKey:  os.Getenv("XRAY_PUBLIC_KEY"),
 		XrayShortID:    os.Getenv("XRAY_SHORT_ID"),
 		XrayServerName: os.Getenv("XRAY_SERVER_NAME"),
-		TrojanEnabled:  parseBoolEnv(os.Getenv("TROJAN_ENABLED")),
-		TrojanDomain:   os.Getenv("TROJAN_DOMAIN"),
-		TrojanPort:     8443,
-		TrojanTag:      getEnvOr("TROJAN_INBOUND_TAG", "trojan-in"),
+		FullSyncEvery:  10 * time.Minute,
 	}
 	if v := os.Getenv("XRAY_PORT"); v != "" {
 		port, err := strconv.Atoi(v)
@@ -60,12 +54,12 @@ func loadConfig() Config {
 		}
 		c.XrayPort = port
 	}
-	if v := os.Getenv("TROJAN_PORT"); v != "" {
-		port, err := strconv.Atoi(v)
-		if err != nil || port < 1 || port > 65535 {
-			log.Fatal("TROJAN_PORT must be an integer between 1 and 65535")
+	if v := os.Getenv("XRAY_FULL_SYNC_INTERVAL"); v != "" {
+		interval, err := time.ParseDuration(v)
+		if err != nil || interval < time.Minute {
+			log.Fatal("XRAY_FULL_SYNC_INTERVAL must be a duration >= 1m, for example 10m")
 		}
-		c.TrojanPort = port
+		c.FullSyncEvery = interval
 	}
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
@@ -81,9 +75,6 @@ func loadConfig() Config {
 	if c.XrayPublicKey == "" || c.XrayShortID == "" || c.XrayServerName == "" {
 		log.Fatal("XRAY_PUBLIC_KEY, XRAY_SHORT_ID and XRAY_SERVER_NAME are required")
 	}
-	if c.TrojanEnabled && c.TrojanDomain == "" {
-		log.Fatal("TROJAN_DOMAIN is required when TROJAN_ENABLED=true")
-	}
 	return c
 }
 
@@ -92,15 +83,6 @@ func getEnvOr(key, def string) string {
 		return v
 	}
 	return def
-}
-
-func parseBoolEnv(v string) bool {
-	switch strings.ToLower(strings.TrimSpace(v)) {
-	case "1", "true", "yes", "on":
-		return true
-	default:
-		return false
-	}
 }
 
 func (c Config) SubURL(token string) string {
@@ -119,15 +101,6 @@ func (c Config) VLESSURL(uuid string) string {
 	q.Set("spx", "/")
 	q.Set("type", "tcp")
 	return fmt.Sprintf("vless://%s@%s:%d?%s#%s", uuid, c.ServerAddr, c.XrayPort, q.Encode(), url.QueryEscape(c.NodeName))
-}
-
-func (c Config) TrojanURL(password string) string {
-	if !c.TrojanEnabled {
-		return ""
-	}
-	q := url.Values{}
-	q.Set("sni", c.TrojanDomain)
-	return fmt.Sprintf("trojan://%s@%s:%d?%s#%s", url.QueryEscape(password), c.TrojanDomain, c.TrojanPort, q.Encode(), url.QueryEscape(c.NodeName))
 }
 
 func generateToken() (string, error) {
@@ -166,14 +139,17 @@ func main() {
 	}
 
 	mgr := NewManager(ManagerConfig{
-		APIAddr:       cfg.XrayAPIAddr,
-		VLESSInbound:  cfg.XrayInboundTag,
-		VLESSPort:     cfg.XrayPort,
-		TrojanEnabled: cfg.TrojanEnabled,
-		TrojanInbound: cfg.TrojanTag,
-		TrojanPort:    cfg.TrojanPort,
+		APIAddr:      cfg.XrayAPIAddr,
+		VLESSInbound: cfg.XrayInboundTag,
+		VLESSPort:    cfg.XrayPort,
 	})
-	h := &handler{cfg: cfg, db: db, mgr: mgr, statBase: make(map[string]int64)}
+	h := &handler{
+		cfg:        cfg,
+		db:         db,
+		mgr:        mgr,
+		statBase:   make(map[string]int64),
+		registered: make(map[string]struct{}),
+	}
 
 	h.syncToManager()
 	h.resetStatsBaseline()
@@ -204,11 +180,14 @@ func main() {
 }
 
 type handler struct {
-	cfg        Config
-	db         *DB
-	mgr        *Manager
-	statBaseMu sync.Mutex
-	statBase   map[string]int64
+	cfg          Config
+	db           *DB
+	mgr          *Manager
+	statBaseMu   sync.Mutex
+	statBase     map[string]int64
+	regMu        sync.Mutex
+	registered   map[string]struct{}
+	lastFullSync time.Time
 }
 
 func (h *handler) syncToManager() {
@@ -217,15 +196,73 @@ func (h *handler) syncToManager() {
 		log.Printf("sync: list tokens: %v", err)
 		return
 	}
+	fullSync := h.shouldFullSync()
 	added := 0
 	for _, t := range tokens {
-		if err := h.mgr.AddUser(t.Password, t.Token); err != nil {
+		ok, err := h.ensureRegistered(t.Password, t.Token, fullSync)
+		if err != nil {
 			log.Printf("sync: add user %s: %v", t.Token, err)
 			continue
 		}
-		added++
+		if ok {
+			added++
+		}
 	}
-	log.Printf("sync: checked %d active tokens, submitted %d users", len(tokens), added)
+	if fullSync {
+		h.markFullSync()
+	}
+	log.Printf("sync: checked %d active tokens, submitted %d users, full=%t", len(tokens), added, fullSync)
+}
+
+func (h *handler) shouldFullSync() bool {
+	if h.cfg.FullSyncEvery <= 0 {
+		return false
+	}
+	h.regMu.Lock()
+	defer h.regMu.Unlock()
+	return h.lastFullSync.IsZero() || time.Since(h.lastFullSync) >= h.cfg.FullSyncEvery
+}
+
+func (h *handler) markFullSync() {
+	h.regMu.Lock()
+	h.lastFullSync = time.Now()
+	h.regMu.Unlock()
+}
+
+func (h *handler) ensureRegistered(password, token string, force bool) (bool, error) {
+	if !force {
+		h.regMu.Lock()
+		_, ok := h.registered[token]
+		h.regMu.Unlock()
+		if ok {
+			return false, nil
+		}
+	}
+	if err := h.mgr.AddUser(password, token); err != nil {
+		return false, err
+	}
+	h.markRegistered(token)
+	return true, nil
+}
+
+func (h *handler) markRegistered(token string) {
+	h.regMu.Lock()
+	h.registered[token] = struct{}{}
+	h.regMu.Unlock()
+}
+
+func (h *handler) markUnregistered(token string) {
+	h.regMu.Lock()
+	delete(h.registered, token)
+	h.regMu.Unlock()
+}
+
+func (h *handler) removeRegistered(token string) error {
+	if err := h.mgr.RemoveUser(token); err != nil {
+		return err
+	}
+	h.markUnregistered(token)
+	return nil
 }
 
 func (h *handler) resetStatsBaseline() {
@@ -272,7 +309,7 @@ func (h *handler) pollStats() {
 	}
 	for _, t := range tokens {
 		if t.QuotaGB != nil && float64(t.UsedBytes) >= *t.QuotaGB*1e9 {
-			if err := h.mgr.RemoveUser(t.Token); err != nil {
+			if err := h.removeRegistered(t.Token); err != nil {
 				log.Printf("quota enforce: remove user %s: %v", t.Token, err)
 				continue
 			}
@@ -290,7 +327,7 @@ func (h *handler) pollStats() {
 		return
 	}
 	for _, t := range expired {
-		if err := h.mgr.RemoveUser(t.Token); err != nil {
+		if err := h.removeRegistered(t.Token); err != nil {
 			log.Printf("expiry enforce: remove user %s: %v", t.Token, err)
 			continue
 		}
@@ -512,7 +549,6 @@ func (h *handler) handleTokens(w http.ResponseWriter, r *http.Request) {
 			SubURL    string   `json:"sub_url"`
 			ClashURL  string   `json:"clash_url"`
 			VLESSURL  string   `json:"vless_url"`
-			TrojanURL string   `json:"trojan_url"`
 			QuotaGB   *float64 `json:"quota_gb"`
 			UsedBytes int64    `json:"used_bytes"`
 			CreatedAt string   `json:"created_at"`
@@ -530,7 +566,6 @@ func (h *handler) handleTokens(w http.ResponseWriter, r *http.Request) {
 				SubURL:    h.cfg.SubURL(t.Token),
 				ClashURL:  h.cfg.SubURL(t.Token),
 				VLESSURL:  h.cfg.VLESSURL(t.Password),
-				TrojanURL: h.cfg.TrojanURL(t.Password),
 				QuotaGB:   t.QuotaGB,
 				UsedBytes: t.UsedBytes,
 				CreatedAt: t.CreatedAt,
@@ -570,7 +605,7 @@ func (h *handler) handleTokens(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		if err := h.mgr.AddUser(password, token); err != nil {
+		if _, err := h.ensureRegistered(password, token, true); err != nil {
 			http.Error(w, "failed to register with xray: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -584,18 +619,17 @@ func (h *handler) handleTokens(w http.ResponseWriter, r *http.Request) {
 		}
 		t, err := h.db.CreateToken(req.Name, token, password, h.cfg.XrayPort, req.ExpiryDays, req.QuotaGB)
 		if err != nil {
-			if rmErr := h.mgr.RemoveUser(token); rmErr != nil {
+			if rmErr := h.removeRegistered(token); rmErr != nil {
 				log.Printf("create token: rollback remove user %s: %v", token, rmErr)
 			}
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		writeJSON(w, http.StatusCreated, map[string]any{
-			"token":      t.Token,
-			"sub_url":    h.cfg.SubURL(t.Token),
-			"clash_url":  h.cfg.SubURL(t.Token),
-			"vless_url":  h.cfg.VLESSURL(t.Password),
-			"trojan_url": h.cfg.TrojanURL(t.Password),
+			"token":     t.Token,
+			"sub_url":   h.cfg.SubURL(t.Token),
+			"clash_url": h.cfg.SubURL(t.Token),
+			"vless_url": h.cfg.VLESSURL(t.Password),
 		})
 
 	default:
@@ -649,7 +683,7 @@ func (h *handler) handleTokenByID(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if t.Suspended && quotaExhausted && !expired {
-				if err := h.mgr.AddUser(t.Password, t.Token); err != nil {
+				if _, err := h.ensureRegistered(t.Password, t.Token, true); err != nil {
 					http.Error(w, "failed to add user to xray: "+err.Error(), http.StatusInternalServerError)
 					return
 				}
@@ -658,7 +692,7 @@ func (h *handler) handleTokenByID(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			} else if !t.Suspended && !expired {
-				if err := h.mgr.AddUser(t.Password, t.Token); err != nil {
+				if _, err := h.ensureRegistered(t.Password, t.Token, false); err != nil {
 					log.Printf("reset usage: ensure user %s: %v", t.Token, err)
 				}
 			}
@@ -689,7 +723,7 @@ func (h *handler) handleTokenByID(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if expiredAndSuspended && !quotaAlsoExhausted {
-				if err := h.mgr.AddUser(t.Password, t.Token); err != nil {
+				if _, err := h.ensureRegistered(t.Password, t.Token, true); err != nil {
 					log.Printf("extend: re-register user %s: %v", t.Token, err)
 				} else if err := h.db.SetSuspended(token, false); err != nil {
 					log.Printf("extend: lift suspension %s: %v", token, err)
@@ -721,7 +755,7 @@ func (h *handler) handleTokenByID(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			if *req.Suspended {
-				if err := h.mgr.RemoveUser(t.Token); err != nil {
+				if err := h.removeRegistered(t.Token); err != nil {
 					http.Error(w, "failed to remove user from xray: "+err.Error(), http.StatusInternalServerError)
 					return
 				}
@@ -730,7 +764,7 @@ func (h *handler) handleTokenByID(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			} else {
-				if err := h.mgr.AddUser(t.Password, t.Token); err != nil {
+				if _, err := h.ensureRegistered(t.Password, t.Token, true); err != nil {
 					http.Error(w, "failed to add user to xray: "+err.Error(), http.StatusInternalServerError)
 					return
 				}
@@ -752,7 +786,7 @@ func (h *handler) handleTokenByID(w http.ResponseWriter, r *http.Request) {
 		}
 		// re-register with Xray if suspension was lifted
 		if t, err := h.db.GetActiveToken(token); err == nil {
-			if err := h.mgr.AddUser(t.Password, t.Token); err != nil {
+			if _, err := h.ensureRegistered(t.Password, t.Token, false); err != nil {
 				log.Printf("quota update: re-register user %s: %v", t.Token, err)
 			}
 		}
@@ -766,7 +800,7 @@ func (h *handler) handleTokenByID(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if t.Active && !t.Suspended {
-			if err := h.mgr.RemoveUser(t.Token); err != nil {
+			if err := h.removeRegistered(t.Token); err != nil {
 				http.Error(w, "failed to remove user from xray: "+err.Error(), http.StatusInternalServerError)
 				return
 			}

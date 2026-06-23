@@ -12,44 +12,27 @@ import (
 )
 
 type Manager struct {
-	apiAddr       string
-	vlessInbound  string
-	vlessPort     int
-	trojanEnabled bool
-	trojanInbound string
-	trojanPort    int
+	apiAddr      string
+	vlessInbound string
+	vlessPort    int
 }
 
 type ManagerConfig struct {
-	APIAddr       string
-	VLESSInbound  string
-	VLESSPort     int
-	TrojanEnabled bool
-	TrojanInbound string
-	TrojanPort    int
+	APIAddr      string
+	VLESSInbound string
+	VLESSPort    int
 }
 
 func NewManager(cfg ManagerConfig) *Manager {
 	return &Manager{
-		apiAddr:       cfg.APIAddr,
-		vlessInbound:  cfg.VLESSInbound,
-		vlessPort:     cfg.VLESSPort,
-		trojanEnabled: cfg.TrojanEnabled,
-		trojanInbound: cfg.TrojanInbound,
-		trojanPort:    cfg.TrojanPort,
+		apiAddr:      cfg.APIAddr,
+		vlessInbound: cfg.VLESSInbound,
+		vlessPort:    cfg.VLESSPort,
 	}
 }
 
 func (m *Manager) AddUser(uuid, email string) error {
-	if err := m.addUser(buildVLESSAddUserPayload(m.vlessInbound, m.vlessPort, uuid, email)); err != nil {
-		return err
-	}
-	if m.trojanEnabled {
-		if err := m.addUser(buildTrojanAddUserPayload(m.trojanInbound, m.trojanPort, uuid, email)); err != nil {
-			return err
-		}
-	}
-	return nil
+	return m.addUser(buildVLESSAddUserPayload(m.vlessInbound, m.vlessPort, uuid, email))
 }
 
 func (m *Manager) addUser(payload map[string]any) error {
@@ -100,37 +83,8 @@ func buildVLESSAddUserPayload(inboundTag string, inboundPort int, uuid, email st
 	}
 }
 
-func buildTrojanAddUserPayload(inboundTag string, inboundPort int, password, email string) map[string]any {
-	return map[string]any{
-		"inbounds": []map[string]any{
-			{
-				"tag":      inboundTag,
-				"listen":   "0.0.0.0",
-				"port":     inboundPort,
-				"protocol": "trojan",
-				"settings": map[string]any{
-					"clients": []map[string]any{
-						{
-							"password": password,
-							"email":    email,
-						},
-					},
-				},
-			},
-		},
-	}
-}
-
 func (m *Manager) RemoveUser(email string) error {
-	if err := m.removeUser(m.vlessInbound, email); err != nil {
-		return err
-	}
-	if m.trojanEnabled {
-		if err := m.removeUser(m.trojanInbound, email); err != nil {
-			return err
-		}
-	}
-	return nil
+	return m.removeUser(m.vlessInbound, email)
 }
 
 func (m *Manager) removeUser(inboundTag, email string) error {

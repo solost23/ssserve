@@ -33,15 +33,12 @@ openssl rand -hex 32
 SERVER_ADDR=202.182.111.110.sslip.io
 NODE_NAME=Tokyo
 ADMIN_SECRET=replace-with-a-long-random-secret
-XRAY_PORT=8443
+XRAY_PORT=443
 XRAY_PRIVATE_KEY=replace-with-reality-private-key
 XRAY_PUBLIC_KEY=replace-with-reality-public-key
 XRAY_SHORT_ID=replacehex
 XRAY_SERVER_NAME=www.cloudflare.com
 XRAY_DEST=www.cloudflare.com:443
-TROJAN_ENABLED=false
-TROJAN_DOMAIN=202.182.111.110.sslip.io
-TROJAN_PORT=443
 ```
 
 `SERVER_ADDR` 会用于：
@@ -50,29 +47,7 @@ TROJAN_PORT=443
 - 订阅链接：`http://SERVER_ADDR/sub/<token>/clash.yaml`
 - 客户端节点里的 `server`
 
-如果客户端应通过域名连接，`SERVER_ADDR` 必须填写域名，不能填写服务器 IP。`XRAY_PORT` 是 VLESS REALITY 的公网端口；如果把 Trojan + TLS 放在 443，则 `XRAY_PORT` 需要使用另一个端口，例如 8443。
-
-如果要给小火箭使用 Trojan + TLS，先让 `TROJAN_DOMAIN` 解析到服务器，并准备证书：
-
-```bash
-mkdir -p certbot/www certbot/conf
-docker run --rm \
-  -v "$(pwd)/certbot/conf:/etc/letsencrypt" \
-  -v "$(pwd)/certbot/www:/var/www/certbot" \
-  certbot/certbot certonly --webroot \
-  -w /var/www/certbot \
-  -d 202.182.111.110.sslip.io \
-  --agree-tos --register-unsafely-without-email
-```
-
-然后在 `.env` 里启用：
-
-```env
-XRAY_PORT=8443
-TROJAN_ENABLED=true
-TROJAN_DOMAIN=202.182.111.110.sslip.io
-TROJAN_PORT=443
-```
+`SERVER_ADDR` 会写入订阅链接和客户端节点里的 `server` 字段。客户端如果通过域名连接就填域名；如果直接通过 IP 连接就填公网 IP。`XRAY_PORT` 是 VLESS REALITY 的公网端口，默认使用 443。
 
 ## 生成配置
 
@@ -120,8 +95,8 @@ http://SERVER_ADDR/
 ## 管理使用
 
 - 创建订阅：在管理界面填写名称，点击 `Create`。
-- Clash Meta：使用 `Clash` 订阅链接。
-- sing-box / v2rayN 等客户端：使用 `VLESS` 链接。
+- ClashX Meta / Clash Lite：使用 `Clash` 订阅链接。
+- v2rayN / v2rayNG 等客户端：使用 `VLESS` 链接。
 - 暂停或恢复用户：在管理界面操作，后端会同步更新 Xray inbound 用户。
 - 吊销订阅：点击 `Revoke`，订阅失效并从 Xray 删除该用户。
 - 查看流量：管理界面显示每个 token 的已用流量和配额进度。

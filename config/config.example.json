@@ -53,36 +53,6 @@
       "settings": {
         "address": "127.0.0.1"
       }
-    },
-    {
-      "tag": "trojan-in",
-      "listen": "0.0.0.0",
-      "port": 443,
-      "protocol": "trojan",
-      "settings": {
-        "clients": []
-      },
-      "streamSettings": {
-        "network": "tcp",
-        "security": "tls",
-        "tlsSettings": {
-          "serverName": "202.182.111.110.sslip.io",
-          "certificates": [
-            {
-              "certificateFile": "/etc/letsencrypt/live/202.182.111.110.sslip.io/fullchain.pem",
-              "keyFile": "/etc/letsencrypt/live/202.182.111.110.sslip.io/privkey.pem"
-            }
-          ]
-        }
-      },
-      "sniffing": {
-        "enabled": true,
-        "destOverride": [
-          "http",
-          "tls",
-          "quic"
-        ]
-      }
     }
   ],
   "outbounds": [

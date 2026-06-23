@@ -17,6 +17,14 @@ const createErr = ref('')
 const quotaTarget = ref(null)
 const extendTarget = ref(null)
 const qrTarget = ref(null)
+const linkTarget = ref(null)
+
+const clientDownloads = [
+  { platform: 'macOS', name: 'ClashX Meta', url: 'https://github.com/MetaCubeX/ClashX.Meta/releases' },
+  { platform: 'Windows', name: 'v2rayN', url: 'https://github.com/2dust/v2rayN/releases' },
+  { platform: 'iOS', name: 'Clash Lite', url: 'https://apps.apple.com/us/app/clash-lte/id6443819341' },
+  { platform: 'Android', name: 'v2rayNG', url: 'https://github.com/2dust/v2rayNG/releases' },
+]
 
 // inline rename state
 const editingToken = ref(null)
@@ -161,6 +169,10 @@ function statusInfo(t) {
   return { cls: 'badge-active', label: 'Active' }
 }
 
+function openLinks(t) {
+  linkTarget.value = t
+}
+
 onMounted(load)
 </script>
 
@@ -203,7 +215,7 @@ onMounted(load)
               <th>流量</th>
               <th>创建</th>
               <th>到期</th>
-              <th>订阅链接</th>
+              <th>连接</th>
               <th></th>
             </tr>
           </thead>
@@ -256,25 +268,7 @@ onMounted(load)
                 <button v-if="t.active" class="btn-ghost micro-btn" @click="openExtend(t)">续期</button>
               </td>
               <td>
-                <div class="sub-links">
-                  <div class="sub-row">
-                    <span class="sub-label">Clash</span>
-                    <span class="sub-url">{{ t.clash_url || t.sub_url }}</span>
-                    <button class="btn-ghost copy-btn" @click="copy(t.clash_url || t.sub_url); showToast('已复制')">复制</button>
-                  </div>
-                  <div class="sub-row">
-                    <span class="sub-label">VLESS</span>
-                    <span class="sub-url">{{ t.vless_url }}</span>
-                    <button class="btn-ghost copy-btn" @click="copy(t.vless_url); showToast('已复制')">复制</button>
-                    <button class="btn-ghost copy-btn" @click="qrTarget = { url: t.vless_url, label: t.name }">二维码</button>
-                  </div>
-                  <div v-if="t.trojan_url" class="sub-row">
-                    <span class="sub-label">Shadowrocket</span>
-                    <span class="sub-url">{{ t.trojan_url }}</span>
-                    <button class="btn-ghost copy-btn" @click="copy(t.trojan_url); showToast('已复制')">复制</button>
-                    <button class="btn-ghost copy-btn" @click="qrTarget = { url: t.trojan_url, label: t.name }">二维码</button>
-                  </div>
-                </div>
+                <button class="btn-outline btn-sm" @click="openLinks(t)">查看链接</button>
               </td>
               <td>
                 <div class="action-col">
@@ -287,6 +281,51 @@ onMounted(load)
             </tr>
           </tbody>
         </table>
+      </div>
+    </div>
+
+    <div v-if="linkTarget" class="card link-card">
+      <div class="table-header">
+        <h2 class="section-title">VPN 链接 · {{ linkTarget.name }}</h2>
+        <button class="btn-ghost btn-sm" @click="linkTarget = null">关闭</button>
+      </div>
+      <div class="link-grid">
+        <div class="link-item">
+          <div class="link-head">
+            <span class="link-title">Clash 订阅</span>
+            <button class="btn-ghost copy-btn" @click="copy(linkTarget.clash_url || linkTarget.sub_url); showToast('已复制')">复制</button>
+          </div>
+          <div class="link-value">{{ linkTarget.clash_url || linkTarget.sub_url }}</div>
+        </div>
+        <div class="link-item">
+          <div class="link-head">
+            <span class="link-title">VLESS</span>
+            <div class="link-actions">
+              <button class="btn-ghost copy-btn" @click="copy(linkTarget.vless_url); showToast('已复制')">复制</button>
+              <button class="btn-ghost copy-btn" @click="qrTarget = { url: linkTarget.vless_url, label: linkTarget.name }">二维码</button>
+            </div>
+          </div>
+          <div class="link-value">{{ linkTarget.vless_url }}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="table-header">
+        <h2 class="section-title">客户端下载</h2>
+      </div>
+      <div class="download-grid">
+        <a
+          v-for="client in clientDownloads"
+          :key="client.platform"
+          class="download-link"
+          :href="client.url"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <span class="download-platform">{{ client.platform }}</span>
+          <span class="download-name">{{ client.name }}</span>
+        </a>
       </div>
     </div>
 
@@ -365,11 +404,61 @@ tr:hover td { background: #fafbff; }
 .expiry-soon { color: #d97706; font-weight: 600; }
 .expiry-expired { color: #ef4444; font-weight: 600; }
 
-.sub-links { display: flex; flex-direction: column; gap: 5px; min-width: 260px; }
-.sub-row { display: flex; align-items: center; gap: 6px; }
-.sub-label { font-size: 11px; font-weight: 600; color: #94a3b8; text-transform: uppercase; min-width: 52px; }
-.sub-url { font-family: monospace; font-size: 11.5px; color: #475569; flex: 1; word-break: break-all; line-height: 1.4; }
 .copy-btn { padding: 2px 8px; font-size: 11.5px; white-space: nowrap; }
+.link-card { border-left: 3px solid #6366f1; }
+.link-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.link-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fff;
+}
+.link-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.link-title { font-size: 12px; font-weight: 700; color: #475569; }
+.link-actions { display: flex; align-items: center; gap: 4px; }
+.link-value {
+  font-family: monospace;
+  font-size: 11.5px;
+  color: #475569;
+  line-height: 1.45;
+  word-break: break-all;
+  max-height: 70px;
+  overflow: auto;
+}
+@media (max-width: 760px) { .link-grid { grid-template-columns: 1fr; } }
+.download-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.download-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  color: #1e293b;
+  text-decoration: none;
+  background: #fff;
+}
+.download-link:hover { background: #f8fafc; border-color: #cbd5e1; }
+.download-platform { font-size: 12px; color: #64748b; font-weight: 600; }
+.download-name { font-size: 13px; color: #334155; font-weight: 600; text-align: right; }
+@media (max-width: 900px) { .download-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .download-grid { grid-template-columns: 1fr; } }
 
 .action-col { display: flex; flex-direction: column; gap: 5px; align-items: flex-start; }
 .btn-sm { padding: 4px 12px; font-size: 12.5px; }

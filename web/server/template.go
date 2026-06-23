@@ -64,9 +64,6 @@ func yamlQuote(s string) string {
 
 func renderDirectRules(cfg Config) string {
 	hosts := []string{cfg.ServerAddr}
-	if cfg.TrojanEnabled {
-		hosts = append(hosts, cfg.TrojanDomain)
-	}
 
 	seen := make(map[string]bool, len(hosts))
 	lines := make([]string, 0, len(hosts))

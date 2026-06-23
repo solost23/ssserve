@@ -21,7 +21,6 @@ services:
       restart: always
       ports:
         - "${XRAY_PORT:-443}:${XRAY_PORT:-443}/tcp"
-        - "${TROJAN_PORT:-8443}:${TROJAN_PORT:-8443}/tcp"
       expose:
         - "10085"
       volumes:
@@ -56,13 +55,10 @@ services:
         XRAY_PORT: ${XRAY_PORT:-443}
         XRAY_API_ADDR: ${XRAY_API_ADDR:-xray:10085}
         XRAY_INBOUND_TAG: ${XRAY_INBOUND_TAG:-vless-in}
+        XRAY_FULL_SYNC_INTERVAL: ${XRAY_FULL_SYNC_INTERVAL:-10m}
         XRAY_PUBLIC_KEY: ${XRAY_PUBLIC_KEY}
         XRAY_SHORT_ID: ${XRAY_SHORT_ID}
         XRAY_SERVER_NAME: ${XRAY_SERVER_NAME}
-        TROJAN_ENABLED: ${TROJAN_ENABLED:-false}
-        TROJAN_DOMAIN: ${TROJAN_DOMAIN:-}
-        TROJAN_PORT: ${TROJAN_PORT:-8443}
-        TROJAN_INBOUND_TAG: ${TROJAN_INBOUND_TAG:-trojan-in}
         ADMIN_SECRET: ${ADMIN_SECRET}
         DB_PATH: /data/sub.db
       volumes:
