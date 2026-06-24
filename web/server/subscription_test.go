@@ -57,6 +57,14 @@ func TestRenderClashIncludesRealityOptions(t *testing.T) {
 	}
 }
 
+func TestRenderClashDoesNotSetProxyGroupTestURL(t *testing.T) {
+	yaml := renderClash(testConfig(), "1a078af0-1bb6-498b-9896-4651db5cbaf4")
+
+	if strings.Contains(yaml, "url:") {
+		t.Fatalf("clash yaml should let clients choose test targets:\n%s", yaml)
+	}
+}
+
 func TestRenderClashDirectsServerHostsBeforeCatchAll(t *testing.T) {
 	cfg := testConfig()
 	cfg.ServerAddr = "sub.example.com"
