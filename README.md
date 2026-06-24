@@ -49,6 +49,23 @@ XRAY_DEST=www.cloudflare.com:443
 
 `SERVER_ADDR` 会写入订阅链接和客户端节点里的 `server` 字段。客户端如果通过域名连接就填域名；如果直接通过 IP 连接就填公网 IP。`XRAY_PORT` 是 VLESS REALITY 的公网端口，默认使用 443。
 
+## 可选网络优化
+
+如果服务器主要用于跨境 TCP 代理，可以在宿主机开启 BBR：
+
+```bash
+sudo ./enable-bbr.sh
+```
+
+脚本会写入 `/etc/sysctl.d/99-xray-bbr.conf`，设置：
+
+```conf
+net.core.default_qdisc=fq
+net.ipv4.tcp_congestion_control=bbr
+```
+
+这是宿主机级别设置，不在 Docker 容器内生效。开启后可用脚本输出的 `sysctl` 结果确认当前拥塞控制算法是否为 `bbr`。
+
 ## 生成配置
 
 运行：
