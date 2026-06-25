@@ -81,7 +81,7 @@ cat > config/xray.json << EOF
             "${XRAY_SHORT_ID}"
           ]
         }
-      },
+      }
     },
     {
       "tag": "api",
