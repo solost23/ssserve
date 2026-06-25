@@ -14,7 +14,18 @@ func renderClash(cfg Config, uuid string) string {
 	return fmt.Sprintf(`mixed-port: 7890
 allow-lan: false
 mode: rule
-log-level: info
+log-level: warning
+tcp-concurrent: true
+ipv6: false
+
+dns:
+  enable: true
+  ipv6: false
+  nameserver:
+    - https://1.1.1.1/dns-query
+    - https://8.8.8.8/dns-query
+  fallback:
+    - https://1.0.0.1/dns-query
 
 proxies:
   - name: %s
@@ -28,6 +39,7 @@ proxies:
     flow: xtls-rprx-vision
     servername: %s
     client-fingerprint: chrome
+    tfo: true
     reality-opts:
       public-key: %s
       short-id: %s
