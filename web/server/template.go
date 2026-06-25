@@ -46,6 +46,7 @@ proxy-groups:
       - DIRECT
 
 rules:
+  - DOMAIN-SUFFIX,htyjbot.com,DIRECT
   - DOMAIN,localhost,DIRECT
   - DOMAIN-SUFFIX,local,DIRECT
   - IP-CIDR,10.0.0.0/8,DIRECT,no-resolve
