@@ -18,15 +18,6 @@ log-level: warning
 tcp-concurrent: true
 ipv6: false
 
-dns:
-  enable: true
-  ipv6: false
-  nameserver:
-    - https://1.1.1.1/dns-query
-    - https://8.8.8.8/dns-query
-  fallback:
-    - https://1.0.0.1/dns-query
-
 proxies:
   - name: %s
     type: vless
@@ -48,6 +39,8 @@ proxies:
 proxy-groups:
   - name: Proxy
     type: select
+    url: http://cp.cloudflare.com/generate_204
+    interval: 300
     proxies:
       - %s
       - DIRECT
