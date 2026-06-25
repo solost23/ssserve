@@ -22,6 +22,31 @@ SYSCTL_FILE=/etc/sysctl.d/99-xray-bbr.conf
 cat > "$SYSCTL_FILE" <<'EOF'
 net.core.default_qdisc=fq
 net.ipv4.tcp_congestion_control=bbr
+
+# socket buffer — allow kernel to auto-tune up to 64 MB
+net.core.rmem_max=67108864
+net.core.wmem_max=67108864
+net.ipv4.tcp_rmem=4096 87380 67108864
+net.ipv4.tcp_wmem=4096 65536 67108864
+
+# connection backlog
+net.core.somaxconn=65535
+net.ipv4.tcp_max_syn_backlog=65535
+
+# ephemeral port range
+net.ipv4.ip_local_port_range=1024 65535
+
+# TCP Fast Open (client + server)
+net.ipv4.tcp_fastopen=3
+
+# TIME_WAIT reuse and faster cleanup
+net.ipv4.tcp_tw_reuse=1
+net.ipv4.tcp_fin_timeout=30
+
+# TCP keepalive
+net.ipv4.tcp_keepalive_time=300
+net.ipv4.tcp_keepalive_intvl=15
+net.ipv4.tcp_keepalive_probes=5
 EOF
 
 sysctl --system >/dev/null

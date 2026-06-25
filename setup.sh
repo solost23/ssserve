@@ -48,7 +48,11 @@ cat > config/xray.json << EOF
     "levels": {
       "0": {
         "statsUserUplink": true,
-        "statsUserDownlink": true
+        "statsUserDownlink": true,
+        "bufferSize": 4,
+        "connIdle": 300,
+        "uplinkOnly": 2,
+        "downlinkOnly": 5
       }
     }
   },
@@ -78,18 +82,10 @@ cat > config/xray.json << EOF
           ]
         }
       },
-      "sniffing": {
-        "enabled": true,
-        "destOverride": [
-          "http",
-          "tls",
-          "quic"
-        ]
-      }
     },
     {
       "tag": "api",
-      "listen": "0.0.0.0",
+      "listen": "127.0.0.1",
       "port": 10085,
       "protocol": "dokodemo-door",
       "settings": {

@@ -31,8 +31,8 @@ services:
       command: ["run", "-config", "/etc/xray/config.json"]
       ulimits:
         nofile:
-          soft: 65535
-          hard: 65535
+          soft: 1048576
+          hard: 1048576
       healthcheck:
         test: ["CMD", "xray", "api", "statsquery", "--server=127.0.0.1:10085", "-pattern", "user>>>"]
         interval: 5s
