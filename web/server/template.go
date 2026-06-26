@@ -17,6 +17,16 @@ mode: rule
 log-level: warning
 tcp-concurrent: true
 ipv6: false
+external-controller: '127.0.0.1:9090'
+
+dns:
+  enable: true
+  ipv6: false
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  nameserver:
+    - https://doh.pub/dns-query
+    - https://dns.alidns.com/dns-query
 
 proxies:
   - name: %s

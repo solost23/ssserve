@@ -544,7 +544,21 @@ func (h *handler) handleSub(w http.ResponseWriter, r *http.Request) {
 	yaml := renderClash(h.cfg, t.Password)
 	w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Subscription-Userinfo", buildSubUserinfo(t))
 	fmt.Fprint(w, yaml)
+}
+
+func buildSubUserinfo(t *Token) string {
+	info := fmt.Sprintf("upload=0; download=%d", t.UsedBytes)
+	if t.QuotaGB != nil {
+		info += fmt.Sprintf("; total=%d", int64(*t.QuotaGB*1e9))
+	}
+	if t.ExpiresAt != nil {
+		if ts, err := time.ParseInLocation("2006-01-02 15:04:05", *t.ExpiresAt, time.UTC); err == nil {
+			info += fmt.Sprintf("; expire=%d", ts.Unix())
+		}
+	}
+	return info
 }
 
 func (h *handler) handleTokens(w http.ResponseWriter, r *http.Request) {
