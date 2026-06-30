@@ -29,7 +29,7 @@
 
 - 检查 Docker / Docker Compose；Linux 主机缺少 Docker 时会尝试安装。
 - 生成 `.env`、`ADMIN_SECRET`、REALITY 密钥和 `XRAY_SHORT_ID`。
-- 使用固定的 Xray 镜像版本，默认 `ghcr.io/xtls/xray-core:v1.260327.0`。
+- 使用固定的 Xray 镜像 digest，避免 `latest` 或 tag 漂移。
 - 生成 `config/nginx.conf` 和 `config/xray.json`。
 - 执行 `docker compose up -d --build`。
 - 输出管理界面地址和节点地址。
@@ -61,7 +61,7 @@ SERVER_ADDR=202.182.111.110.sslip.io
 NODE_NAME=Tokyo
 ADMIN_SECRET=replace-with-a-long-random-secret
 XRAY_PORT=443
-XRAY_IMAGE=ghcr.io/xtls/xray-core:v1.260327.0
+XRAY_IMAGE=ghcr.io/xtls/xray-core@sha256:592ec4d11f656db95598d01e76dbcc6e002d67360b96a5436500a938230f52c7
 XRAY_PRIVATE_KEY=replace-with-reality-private-key
 XRAY_PUBLIC_KEY=replace-with-reality-public-key
 XRAY_SHORT_ID=replacehex
