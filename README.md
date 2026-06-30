@@ -29,6 +29,7 @@
 
 - 检查 Docker / Docker Compose；Linux 主机缺少 Docker 时会尝试安装。
 - 生成 `.env`、`ADMIN_SECRET`、REALITY 密钥和 `XRAY_SHORT_ID`。
+- 使用固定的 Xray 镜像版本，默认 `ghcr.io/xtls/xray-core:v26.3.27`。
 - 生成 `config/nginx.conf` 和 `config/xray.json`。
 - 执行 `docker compose up -d --build`。
 - 输出管理界面地址和节点地址。
@@ -60,6 +61,7 @@ SERVER_ADDR=202.182.111.110.sslip.io
 NODE_NAME=Tokyo
 ADMIN_SECRET=replace-with-a-long-random-secret
 XRAY_PORT=443
+XRAY_IMAGE=ghcr.io/xtls/xray-core:v26.3.27
 XRAY_PRIVATE_KEY=replace-with-reality-private-key
 XRAY_PUBLIC_KEY=replace-with-reality-public-key
 XRAY_SHORT_ID=replacehex
@@ -185,7 +187,7 @@ docker exec nginx-sub tail -f /var/log/nginx/sub.access.log
 
 如果 `xray` 容器启动失败，先确认：
 
-- `.env` 已填写 `XRAY_PRIVATE_KEY`、`XRAY_PUBLIC_KEY`、`XRAY_SHORT_ID`、`XRAY_SERVER_NAME`、`XRAY_DEST`
+- `.env` 已填写 `XRAY_IMAGE`、`XRAY_PRIVATE_KEY`、`XRAY_PUBLIC_KEY`、`XRAY_SHORT_ID`、`XRAY_SERVER_NAME`、`XRAY_DEST`
 - 已运行 `./deploy.sh` 或 `./scripts/setup.sh`
 - `config/xray.json` 存在
 - `XRAY_PORT` 没有被其他服务占用

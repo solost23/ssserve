@@ -16,7 +16,7 @@ services:
         - subserver
 
     xray:
-      image: ghcr.io/xtls/xray-core:latest
+      image: ${XRAY_IMAGE:-ghcr.io/xtls/xray-core:v26.3.27}
       container_name: xray
       restart: always
       ports:

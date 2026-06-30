@@ -4,6 +4,7 @@ set -e
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 cd "$ROOT_DIR"
 
+XRAY_IMAGE_DEFAULT=ghcr.io/xtls/xray-core:v26.3.27
 NODE_NAME_ARG=
 SERVER_ADDR_ARG=
 XRAY_PORT_ARG=443
@@ -119,9 +120,9 @@ compose_cmd() {
 }
 
 generate_xray_keys() {
-    key_output=$(docker run --rm ghcr.io/xtls/xray-core x25519)
-    private_key=$(printf '%s\n' "$key_output" | awk -F': ' '/Private key/ {print $2}')
-    public_key=$(printf '%s\n' "$key_output" | awk -F': ' '/Public key/ {print $2}')
+    key_output=$(docker run --rm "$XRAY_IMAGE_DEFAULT" x25519)
+    private_key=$(printf '%s\n' "$key_output" | awk -F': ' '/^Private[ _]?[Kk]ey:/ || /^PrivateKey:/ {print $2; exit}')
+    public_key=$(printf '%s\n' "$key_output" | awk -F': ' '/^Public[ _]?[Kk]ey:/ || /^Password \(PublicKey\):/ {print $2; exit}')
 
     if [ -z "$private_key" ] || [ -z "$public_key" ]; then
         echo "Error: failed to generate Xray REALITY keys"
@@ -160,6 +161,7 @@ ADMIN_SECRET=${admin_secret}
 NGINX_CONF=nginx.conf
 
 # Public VLESS REALITY port.
+XRAY_IMAGE=${XRAY_IMAGE_DEFAULT}
 XRAY_PORT=${XRAY_PORT_ARG}
 XRAY_API_ADDR=xray:10085
 XRAY_INBOUND_TAG=vless-in
