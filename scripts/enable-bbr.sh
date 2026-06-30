@@ -2,7 +2,7 @@
 set -e
 
 if [ "$(id -u)" -ne 0 ]; then
-    echo "Error: run as root, for example: sudo ./enable-bbr.sh"
+    echo "Error: run as root, for example: sudo ./scripts/enable-bbr.sh"
     exit 1
 fi
 
@@ -23,7 +23,7 @@ cat > "$SYSCTL_FILE" <<'EOF'
 net.core.default_qdisc=fq
 net.ipv4.tcp_congestion_control=bbr
 
-# socket buffer — allow kernel to auto-tune up to 64 MB
+# socket buffer - allow kernel to auto-tune up to 64 MB
 net.core.rmem_max=67108864
 net.core.wmem_max=67108864
 net.ipv4.tcp_rmem=4096 87380 67108864

@@ -9,7 +9,33 @@
 - **nginx**：提供管理界面、API 反向代理和订阅接口。
 - **web/front**：Vue 3 管理界面。
 
-## 准备
+## 一键部署
+
+在新 VPS 上 clone 仓库后，直接运行：
+
+```bash
+./deploy.sh --node Singapore --addr <server-ip>.sslip.io --enable-bbr
+```
+
+常用参数：
+
+```bash
+./deploy.sh --node Tokyo --addr 202.182.111.110.sslip.io
+./deploy.sh --node Singapore --addr <server-ip>.sslip.io --force
+./deploy.sh --node Singapore --addr <server-ip>.sslip.io --port 443 --enable-bbr
+```
+
+`deploy.sh` 会自动：
+
+- 检查 Docker / Docker Compose；Linux 主机缺少 Docker 时会尝试安装。
+- 生成 `.env`、`ADMIN_SECRET`、REALITY 密钥和 `XRAY_SHORT_ID`。
+- 生成 `config/nginx.conf` 和 `config/xray.json`。
+- 执行 `docker compose up -d --build`。
+- 输出管理界面地址和节点地址。
+
+如果 `.env` 已存在，默认会保留现有节点配置，只重新生成运行时配置并重启容器。需要重建节点配置时加 `--force`。
+
+## 手动部署
 
 需要 Docker 和 Docker Compose。
 
@@ -54,7 +80,7 @@ XRAY_DEST=www.cloudflare.com:443
 如果服务器主要用于跨境 TCP 代理，可以在宿主机开启 BBR：
 
 ```bash
-sudo ./enable-bbr.sh
+sudo ./scripts/enable-bbr.sh
 ```
 
 脚本会写入 `/etc/sysctl.d/99-xray-bbr.conf`，设置：
@@ -71,7 +97,7 @@ net.ipv4.tcp_congestion_control=bbr
 运行：
 
 ```bash
-./setup.sh
+./scripts/setup.sh
 ```
 
 它会根据 `.env` 生成运行时配置：
@@ -85,7 +111,7 @@ net.ipv4.tcp_congestion_control=bbr
 ./config/xray.json:/etc/xray/config.json:ro
 ```
 
-这个文件包含 REALITY 私钥，所以不会提交到 git。新机器部署时，本地没有 `config/xray.json` 是正常的，先运行 `./setup.sh` 生成它。
+这个文件包含 REALITY 私钥，所以不会提交到 git。新机器部署时，本地没有 `config/xray.json` 是正常的，先运行 `./deploy.sh` 或 `./scripts/setup.sh` 生成它。
 
 ## 启动
 
@@ -120,26 +146,32 @@ http://SERVER_ADDR/
 
 ## 重新部署
 
+使用现有 `.env` 一键重新部署：
+
+```bash
+./deploy.sh
+```
+
 只重新生成配置并启动：
 
 ```bash
-./setup.sh
+./scripts/setup.sh
 docker compose up -d --build
 ```
 
 重置运行配置但保留数据库：
 
 ```bash
-./cleanup.sh
-./setup.sh
+./scripts/cleanup.sh
+./scripts/setup.sh
 docker compose up -d --build
 ```
 
 完全重置，包括删除所有 token 和统计数据：
 
 ```bash
-./cleanup.sh --with-db
-./setup.sh
+./scripts/cleanup.sh --with-db
+./scripts/setup.sh
 docker compose up -d --build
 ```
 
@@ -154,7 +186,7 @@ docker exec nginx-sub tail -f /var/log/nginx/sub.access.log
 如果 `xray` 容器启动失败，先确认：
 
 - `.env` 已填写 `XRAY_PRIVATE_KEY`、`XRAY_PUBLIC_KEY`、`XRAY_SHORT_ID`、`XRAY_SERVER_NAME`、`XRAY_DEST`
-- 已运行 `./setup.sh`
+- 已运行 `./deploy.sh` 或 `./scripts/setup.sh`
 - `config/xray.json` 存在
 - `XRAY_PORT` 没有被其他服务占用
 
@@ -168,13 +200,15 @@ docker exec nginx-sub tail -f /var/log/nginx/sub.access.log
 | `.env` | 本地真实环境变量，不提交 |
 | `config/config.example.json` | Xray 配置示例模板 |
 | `config/nginx.example.conf` | nginx 配置模板 |
-| `config/nginx.conf` | `setup.sh` 生成的 nginx 运行时配置，不提交 |
-| `config/xray.json` | `setup.sh` 生成的 Xray 运行时配置，不提交 |
+| `config/nginx.conf` | `scripts/setup.sh` 生成的 nginx 运行时配置，不提交 |
+| `config/xray.json` | `scripts/setup.sh` 生成的 Xray 运行时配置，不提交 |
 | `data/sub.db` | SQLite 数据库，不提交 |
 | `web/front/` | Vue 3 前端管理界面 |
 | `web/server/` | Go 管理服务源码 |
-| `setup.sh` | 从 `.env` 生成运行时配置 |
-| `cleanup.sh` | 清除生成的运行时配置 |
+| `deploy.sh` | 仓库内一键部署入口 |
+| `scripts/setup.sh` | 从 `.env` 生成运行时配置 |
+| `scripts/cleanup.sh` | 清除生成的运行时配置 |
+| `scripts/enable-bbr.sh` | 开启宿主机 BBR 和 TCP 参数优化 |
 
 ## 安全说明
 

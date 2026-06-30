@@ -1,8 +1,11 @@
 #!/bin/sh
 set -e
 
+ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$ROOT_DIR"
+
 if [ ! -f .env ]; then
-    echo "Error: .env not found. Copy .env.example and fill in your values."
+    echo "Error: .env not found. Run ./deploy.sh or copy .env.example and fill in your values."
     exit 1
 fi
 
