@@ -4,7 +4,7 @@ set -e
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 cd "$ROOT_DIR"
 
-XRAY_IMAGE_DEFAULT=ghcr.io/xtls/xray-core:v26.3.27
+XRAY_IMAGE_DEFAULT=ghcr.io/xtls/xray-core:v1.260327.0
 NODE_NAME_ARG=
 SERVER_ADDR_ARG=
 XRAY_PORT_ARG=443
