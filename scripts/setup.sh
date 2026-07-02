@@ -121,6 +121,7 @@ cat > config/xray.json << EOF
 EOF
 
 mkdir -p data logs/nginx
+chmod 644 config/nginx.conf config/xray.json
 
 echo ""
 echo "Config generated successfully."

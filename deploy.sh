@@ -176,6 +176,8 @@ XRAY_SHORT_ID=${short_id}
 XRAY_SERVER_NAME=www.cloudflare.com
 XRAY_DEST=www.cloudflare.com:443
 EOF
+    chmod 600 .env
+    umask 022
     echo "Generated .env for ${NODE_NAME_ARG} (${SERVER_ADDR_ARG})."
 }
 
