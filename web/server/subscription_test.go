@@ -46,6 +46,7 @@ func TestRenderClashIncludesRealityOptions(t *testing.T) {
 	yaml := renderClash(testConfig(), "1a078af0-1bb6-498b-9896-4651db5cbaf4")
 
 	for _, want := range []string{
+		`    udp: true`,
 		`servername: "www.cloudflare.com"`,
 		`public-key: "public-key"`,
 		`short-id: "f919438ba90e7ae3"`,
