@@ -92,7 +92,7 @@ rules:
   - IP-CIDR6,fe80::/10,DIRECT,no-resolve
 %s
   - GEOSITE,CN,DIRECT
-  - GEOIP,CN,DIRECT
+  - GEOIP,CN,DIRECT,no-resolve
   - MATCH,Proxy
 `,
 		yamlQuote(cfg.NodeName),

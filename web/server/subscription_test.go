@@ -156,7 +156,7 @@ func TestRenderClashDirectsChinaSitesBeforeCatchAll(t *testing.T) {
 	yaml := renderClash(testConfig(), "1a078af0-1bb6-498b-9896-4651db5cbaf4")
 
 	geositeIdx := strings.Index(yaml, `  - GEOSITE,CN,DIRECT`)
-	geoipIdx := strings.Index(yaml, `  - GEOIP,CN,DIRECT`)
+	geoipIdx := strings.Index(yaml, `  - GEOIP,CN,DIRECT,no-resolve`)
 	matchIdx := strings.Index(yaml, `  - MATCH,Proxy`)
 	if geositeIdx == -1 || geoipIdx == -1 || matchIdx == -1 {
 		t.Fatalf("clash yaml missing china direct rules:\n%s", yaml)

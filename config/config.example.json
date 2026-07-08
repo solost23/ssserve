@@ -15,7 +15,11 @@
     "levels": {
       "0": {
         "statsUserUplink": true,
-        "statsUserDownlink": true
+        "statsUserDownlink": true,
+        "bufferSize": 4,
+        "connIdle": 300,
+        "uplinkOnly": 2,
+        "downlinkOnly": 5
       }
     }
   },
