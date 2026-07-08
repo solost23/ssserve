@@ -97,17 +97,19 @@ func TestRenderClashIncludesDNSPolicy(t *testing.T) {
 		`  nameserver:`,
 		`    - https://doh.pub/dns-query`,
 		`    - https://dns.alidns.com/dns-query`,
-		`  nameserver-policy:`,
-		`    "geosite:geolocation-!cn":`,
-		`      - https://cloudflare-dns.com/dns-query`,
-		`      - https://dns.google/dns-query`,
 	} {
 		if !strings.Contains(yaml, want) {
 			t.Fatalf("clash yaml missing dns policy %q:\n%s", want, yaml)
 		}
 	}
-	if strings.Contains(yaml, `"geosite:cn":`) {
-		t.Fatalf("clash yaml should use default nameservers for cn domains instead of duplicate policy:\n%s", yaml)
+	for _, unexpected := range []string{
+		`nameserver-policy:`,
+		`https://cloudflare-dns.com/dns-query`,
+		`https://dns.google/dns-query`,
+	} {
+		if strings.Contains(yaml, unexpected) {
+			t.Fatalf("clash yaml should avoid remote dns policy %q:\n%s", unexpected, yaml)
+		}
 	}
 }
 
