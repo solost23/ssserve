@@ -72,6 +72,8 @@ proxies:
 proxy-groups:
   - name: Proxy
     type: select
+    url: http://cp.cloudflare.com/generate_204
+    interval: 300
     proxies:
       - %s
       - DIRECT

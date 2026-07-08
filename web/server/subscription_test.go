@@ -57,11 +57,16 @@ func TestRenderClashIncludesRealityOptions(t *testing.T) {
 	}
 }
 
-func TestRenderClashDoesNotSetProxyGroupTestURL(t *testing.T) {
+func TestRenderClashSetsProxyGroupTestURL(t *testing.T) {
 	yaml := renderClash(testConfig(), "1a078af0-1bb6-498b-9896-4651db5cbaf4")
 
-	if strings.Contains(yaml, "url:") {
-		t.Fatalf("clash yaml should let clients choose test targets:\n%s", yaml)
+	for _, want := range []string{
+		`    url: http://cp.cloudflare.com/generate_204`,
+		`    interval: 300`,
+	} {
+		if !strings.Contains(yaml, want) {
+			t.Fatalf("clash yaml missing proxy group test setting %q:\n%s", want, yaml)
+		}
 	}
 }
 
