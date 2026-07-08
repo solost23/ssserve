@@ -95,6 +95,7 @@ rules:
 %s
   - GEOSITE,CN,DIRECT
   - GEOIP,CN,DIRECT,no-resolve
+  - AND,((NETWORK,UDP),(DST-PORT,443)),REJECT
   - MATCH,Proxy
 `,
 		yamlQuote(cfg.NodeName),

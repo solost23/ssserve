@@ -162,12 +162,13 @@ func TestRenderClashDirectsChinaSitesBeforeCatchAll(t *testing.T) {
 
 	geositeIdx := strings.Index(yaml, `  - GEOSITE,CN,DIRECT`)
 	geoipIdx := strings.Index(yaml, `  - GEOIP,CN,DIRECT,no-resolve`)
+	quicRejectIdx := strings.Index(yaml, `  - AND,((NETWORK,UDP),(DST-PORT,443)),REJECT`)
 	matchIdx := strings.Index(yaml, `  - MATCH,Proxy`)
-	if geositeIdx == -1 || geoipIdx == -1 || matchIdx == -1 {
+	if geositeIdx == -1 || geoipIdx == -1 || quicRejectIdx == -1 || matchIdx == -1 {
 		t.Fatalf("clash yaml missing china direct rules:\n%s", yaml)
 	}
-	if geositeIdx > geoipIdx || geoipIdx > matchIdx {
-		t.Fatalf("china direct rules must appear before MATCH and GEOSITE before GEOIP:\n%s", yaml)
+	if geositeIdx > geoipIdx || geoipIdx > quicRejectIdx || quicRejectIdx > matchIdx {
+		t.Fatalf("china direct rules must appear before foreign QUIC reject and MATCH:\n%s", yaml)
 	}
 }
 
