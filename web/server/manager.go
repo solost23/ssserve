@@ -1,127 +1,132 @@
 package main
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
-	"os"
-	"os/exec"
-	"regexp"
-	"strconv"
 	"strings"
+	"sync"
 	"time"
+
+	handlercmd "github.com/xtls/xray-core/app/proxyman/command"
+	statscmd "github.com/xtls/xray-core/app/stats/command"
+	"github.com/xtls/xray-core/common/protocol"
+	"github.com/xtls/xray-core/common/serial"
+	"github.com/xtls/xray-core/proxy/vless"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
+
+const xrayAPITimeout = 3 * time.Second
 
 type Manager struct {
 	apiAddr      string
 	vlessInbound string
-	vlessPort    int
+
+	mu            sync.Mutex
+	conn          *grpc.ClientConn
+	handlerClient handlercmd.HandlerServiceClient
+	statsClient   statscmd.StatsServiceClient
 }
 
 type ManagerConfig struct {
 	APIAddr      string
 	VLESSInbound string
-	VLESSPort    int
 }
 
 func NewManager(cfg ManagerConfig) *Manager {
 	return &Manager{
 		apiAddr:      cfg.APIAddr,
 		vlessInbound: cfg.VLESSInbound,
-		vlessPort:    cfg.VLESSPort,
 	}
+}
+
+func (m *Manager) Close() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.conn == nil {
+		return nil
+	}
+	err := m.conn.Close()
+	m.conn = nil
+	m.handlerClient = nil
+	m.statsClient = nil
+	return err
 }
 
 func (m *Manager) AddUser(uuid, email string) error {
-	return m.addUser(buildVLESSAddUserPayload(m.vlessInbound, m.vlessPort, uuid, email))
-}
-
-func (m *Manager) addUser(payload map[string]any) error {
-	cfg, err := os.CreateTemp("", "xray-user-*.json")
+	client, err := m.handler()
 	if err != nil {
 		return err
 	}
-	defer os.Remove(cfg.Name())
-	defer cfg.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), xrayAPITimeout)
+	defer cancel()
 
-	if err := json.NewEncoder(cfg).Encode(payload); err != nil {
-		return err
-	}
-	if err := cfg.Close(); err != nil {
-		return err
-	}
-
-	out, err := m.run("adu", cfg.Name())
+	_, err = client.AlterInbound(ctx, buildVLESSAddUserRequest(m.vlessInbound, uuid, email))
 	if err != nil {
-		if strings.Contains(out, "already exists") {
+		if strings.Contains(err.Error(), "already exists") {
 			return nil
 		}
-		return fmt.Errorf("xray add user: %w: %s", err, out)
+		return fmt.Errorf("xray add user: %w", err)
 	}
 	return nil
 }
 
-func buildVLESSAddUserPayload(inboundTag string, inboundPort int, uuid, email string) map[string]any {
-	return map[string]any{
-		"inbounds": []map[string]any{
-			{
-				"tag":      inboundTag,
-				"listen":   "0.0.0.0",
-				"port":     inboundPort,
-				"protocol": "vless",
-				"settings": map[string]any{
-					"clients": []map[string]any{
-						{
-							"id":    uuid,
-							"email": email,
-							"flow":  "xtls-rprx-vision",
-						},
-					},
-					"decryption": "none",
-				},
+func buildVLESSAddUserRequest(inboundTag, uuid, email string) *handlercmd.AlterInboundRequest {
+	return &handlercmd.AlterInboundRequest{
+		Tag: inboundTag,
+		Operation: serial.ToTypedMessage(&handlercmd.AddUserOperation{
+			User: &protocol.User{
+				Email: email,
+				Account: serial.ToTypedMessage(&vless.Account{
+					Id:         uuid,
+					Flow:       "xtls-rprx-vision",
+					Encryption: "none",
+				}),
 			},
-		},
+		}),
 	}
 }
 
 func (m *Manager) RemoveUser(email string) error {
-	return m.removeUser(m.vlessInbound, email)
-}
-
-func (m *Manager) removeUser(inboundTag, email string) error {
-	out, err := m.run("rmu", "-tag="+inboundTag, email)
+	client, err := m.handler()
 	if err != nil {
-		if strings.Contains(out, "not found") {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), xrayAPITimeout)
+	defer cancel()
+
+	_, err = client.AlterInbound(ctx, buildRemoveUserRequest(m.vlessInbound, email))
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
 			return nil
 		}
-		return fmt.Errorf("xray remove user: %w: %s", err, out)
+		return fmt.Errorf("xray remove user: %w", err)
 	}
 	return nil
 }
 
+func buildRemoveUserRequest(inboundTag, email string) *handlercmd.AlterInboundRequest {
+	return &handlercmd.AlterInboundRequest{
+		Tag:       inboundTag,
+		Operation: serial.ToTypedMessage(&handlercmd.RemoveUserOperation{Email: email}),
+	}
+}
+
 func (m *Manager) Stats() (map[string]int64, error) {
-	out, err := m.run("statsquery", "-pattern", "user>>>")
+	client, err := m.stats()
 	if err != nil {
-		return nil, fmt.Errorf("xray stats: %w: %s", err, out)
+		return nil, err
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), xrayAPITimeout)
+	defer cancel()
 
+	resp, err := client.QueryStats(ctx, &statscmd.QueryStatsRequest{Pattern: "user>>>"})
+	if err != nil {
+		return nil, fmt.Errorf("xray stats: %w", err)
+	}
 	stats := make(map[string]int64)
-	var resp struct {
-		Stat []struct {
-			Name  string `json:"name"`
-			Value int64  `json:"value"`
-		} `json:"stat"`
-	}
-	if err := json.Unmarshal([]byte(out), &resp); err == nil && len(resp.Stat) > 0 {
-		for _, s := range resp.Stat {
-			addStat(stats, s.Name, s.Value)
-		}
-		return stats, nil
-	}
-
-	re := regexp.MustCompile(`(?s)name:\s*"([^"]+)".*?value:\s*([0-9]+)`)
-	for _, match := range re.FindAllStringSubmatch(out, -1) {
-		v, _ := strconv.ParseInt(match[2], 10, 64)
-		addStat(stats, match[1], v)
+	for _, s := range resp.GetStat() {
+		addStat(stats, s.GetName(), s.GetValue())
 	}
 	return stats, nil
 }
@@ -134,23 +139,44 @@ func addStat(stats map[string]int64, name string, value int64) {
 	stats[parts[1]] += value
 }
 
-func (m *Manager) run(args ...string) (string, error) {
-	base := []string{"api", args[0], "--server=" + m.apiAddr, "--timeout=3"}
-	base = append(base, args[1:]...)
-	cmd := exec.Command("xray", base...)
-	var out strings.Builder
-	cmd.Stdout = &out
-	cmd.Stderr = &out
-	errCh := make(chan error, 1)
-	if err := cmd.Start(); err != nil {
-		return out.String(), err
+func (m *Manager) handler() (handlercmd.HandlerServiceClient, error) {
+	if err := m.connect(); err != nil {
+		return nil, err
 	}
-	go func() { errCh <- cmd.Wait() }()
-	select {
-	case err := <-errCh:
-		return out.String(), err
-	case <-time.After(5 * time.Second):
-		_ = cmd.Process.Kill()
-		return out.String(), fmt.Errorf("timeout")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.handlerClient, nil
+}
+
+func (m *Manager) stats() (statscmd.StatsServiceClient, error) {
+	if err := m.connect(); err != nil {
+		return nil, err
 	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.statsClient, nil
+}
+
+func (m *Manager) connect() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.conn != nil {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), xrayAPITimeout)
+	defer cancel()
+	conn, err := grpc.DialContext(
+		ctx,
+		m.apiAddr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock(),
+	)
+	if err != nil {
+		return fmt.Errorf("xray api connect: %w", err)
+	}
+	m.conn = conn
+	m.handlerClient = handlercmd.NewHandlerServiceClient(conn)
+	m.statsClient = statscmd.NewStatsServiceClient(conn)
+	return nil
 }

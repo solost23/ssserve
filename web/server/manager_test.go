@@ -1,53 +1,64 @@
 package main
 
 import (
-	"encoding/json"
 	"testing"
+
+	handlercmd "github.com/xtls/xray-core/app/proxyman/command"
+	"github.com/xtls/xray-core/proxy/vless"
 )
 
-func TestBuildAddUserPayload(t *testing.T) {
-	payload := buildVLESSAddUserPayload("vless-in", 443, "1a078af0-1bb6-498b-9896-4651db5cbaf4", "token-1")
+func TestBuildVLESSAddUserRequest(t *testing.T) {
+	req := buildVLESSAddUserRequest("vless-in", "1a078af0-1bb6-498b-9896-4651db5cbaf4", "token-1")
 
-	raw, err := json.Marshal(payload)
+	if req.Tag != "vless-in" {
+		t.Fatalf("tag = %q, want vless-in", req.Tag)
+	}
+	msg, err := req.Operation.GetInstance()
 	if err != nil {
-		t.Fatalf("marshal payload: %v", err)
+		t.Fatalf("decode operation: %v", err)
+	}
+	op, ok := msg.(*handlercmd.AddUserOperation)
+	if !ok {
+		t.Fatalf("operation = %T, want *AddUserOperation", msg)
+	}
+	if op.User.GetEmail() != "token-1" {
+		t.Fatalf("email = %q, want token-1", op.User.GetEmail())
 	}
 
-	var got struct {
-		Inbounds []struct {
-			Tag      string `json:"tag"`
-			Listen   string `json:"listen"`
-			Port     int    `json:"port"`
-			Protocol string `json:"protocol"`
-			Settings struct {
-				Clients []struct {
-					ID    string `json:"id"`
-					Email string `json:"email"`
-					Flow  string `json:"flow"`
-				} `json:"clients"`
-				Decryption string `json:"decryption"`
-			} `json:"settings"`
-		} `json:"inbounds"`
+	accountMsg, err := op.User.GetAccount().GetInstance()
+	if err != nil {
+		t.Fatalf("decode account: %v", err)
 	}
-	if err := json.Unmarshal(raw, &got); err != nil {
-		t.Fatalf("unmarshal payload: %v", err)
+	account, ok := accountMsg.(*vless.Account)
+	if !ok {
+		t.Fatalf("account = %T, want *vless.Account", accountMsg)
 	}
+	if account.Id != "1a078af0-1bb6-498b-9896-4651db5cbaf4" {
+		t.Fatalf("id = %q", account.Id)
+	}
+	if account.Flow != "xtls-rprx-vision" {
+		t.Fatalf("flow = %q", account.Flow)
+	}
+	if account.Encryption != "none" {
+		t.Fatalf("encryption = %q", account.Encryption)
+	}
+}
 
-	if len(got.Inbounds) != 1 {
-		t.Fatalf("expected one inbound, got %d", len(got.Inbounds))
+func TestBuildRemoveUserRequest(t *testing.T) {
+	req := buildRemoveUserRequest("vless-in", "token-1")
+
+	if req.Tag != "vless-in" {
+		t.Fatalf("tag = %q, want vless-in", req.Tag)
 	}
-	inbound := got.Inbounds[0]
-	if inbound.Tag != "vless-in" || inbound.Listen != "0.0.0.0" || inbound.Port != 443 || inbound.Protocol != "vless" {
-		t.Fatalf("unexpected inbound: %+v", inbound)
+	msg, err := req.Operation.GetInstance()
+	if err != nil {
+		t.Fatalf("decode operation: %v", err)
 	}
-	if inbound.Settings.Decryption != "none" {
-		t.Fatalf("unexpected decryption: %q", inbound.Settings.Decryption)
+	op, ok := msg.(*handlercmd.RemoveUserOperation)
+	if !ok {
+		t.Fatalf("operation = %T, want *RemoveUserOperation", msg)
 	}
-	if len(inbound.Settings.Clients) != 1 {
-		t.Fatalf("expected one client, got %d", len(inbound.Settings.Clients))
-	}
-	client := inbound.Settings.Clients[0]
-	if client.ID != "1a078af0-1bb6-498b-9896-4651db5cbaf4" || client.Email != "token-1" || client.Flow != "xtls-rprx-vision" {
-		t.Fatalf("unexpected client: %+v", client)
+	if op.Email != "token-1" {
+		t.Fatalf("email = %q, want token-1", op.Email)
 	}
 }

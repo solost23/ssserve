@@ -65,6 +65,52 @@ func TestRenderClashDoesNotSetProxyGroupTestURL(t *testing.T) {
 	}
 }
 
+func TestRenderClashDoesNotSetExternalController(t *testing.T) {
+	yaml := renderClash(testConfig(), "1a078af0-1bb6-498b-9896-4651db5cbaf4")
+
+	if strings.Contains(yaml, "external-controller:") {
+		t.Fatalf("clash yaml should not reserve a controller port:\n%s", yaml)
+	}
+}
+
+func TestRenderClashIncludesFakeIPFilter(t *testing.T) {
+	yaml := renderClash(testConfig(), "1a078af0-1bb6-498b-9896-4651db5cbaf4")
+
+	for _, want := range []string{
+		`  fake-ip-filter:`,
+		`    - "*.lan"`,
+		`    - "*.local"`,
+		`    - connectivitycheck.gstatic.com`,
+		`    - captive.apple.com`,
+		`    - "*.pool.ntp.org"`,
+	} {
+		if !strings.Contains(yaml, want) {
+			t.Fatalf("clash yaml missing fake-ip filter %q:\n%s", want, yaml)
+		}
+	}
+}
+
+func TestRenderClashIncludesDNSPolicy(t *testing.T) {
+	yaml := renderClash(testConfig(), "1a078af0-1bb6-498b-9896-4651db5cbaf4")
+
+	for _, want := range []string{
+		`  nameserver:`,
+		`    - https://doh.pub/dns-query`,
+		`    - https://dns.alidns.com/dns-query`,
+		`  nameserver-policy:`,
+		`    "geosite:geolocation-!cn":`,
+		`      - https://cloudflare-dns.com/dns-query`,
+		`      - https://dns.google/dns-query`,
+	} {
+		if !strings.Contains(yaml, want) {
+			t.Fatalf("clash yaml missing dns policy %q:\n%s", want, yaml)
+		}
+	}
+	if strings.Contains(yaml, `"geosite:cn":`) {
+		t.Fatalf("clash yaml should use default nameservers for cn domains instead of duplicate policy:\n%s", yaml)
+	}
+}
+
 func TestRenderClashDirectsServerHostsBeforeCatchAll(t *testing.T) {
 	cfg := testConfig()
 	cfg.ServerAddr = "sub.example.com"
@@ -101,6 +147,20 @@ func TestRenderClashDirectsPrivateNetworksBeforeCatchAll(t *testing.T) {
 		if directIdx == -1 || matchIdx == -1 || directIdx > matchIdx {
 			t.Fatalf("private direct rule %q must appear before MATCH:\n%s", want, yaml)
 		}
+	}
+}
+
+func TestRenderClashDirectsChinaSitesBeforeCatchAll(t *testing.T) {
+	yaml := renderClash(testConfig(), "1a078af0-1bb6-498b-9896-4651db5cbaf4")
+
+	geositeIdx := strings.Index(yaml, `  - GEOSITE,CN,DIRECT`)
+	geoipIdx := strings.Index(yaml, `  - GEOIP,CN,DIRECT`)
+	matchIdx := strings.Index(yaml, `  - MATCH,Proxy`)
+	if geositeIdx == -1 || geoipIdx == -1 || matchIdx == -1 {
+		t.Fatalf("clash yaml missing china direct rules:\n%s", yaml)
+	}
+	if geositeIdx > geoipIdx || geoipIdx > matchIdx {
+		t.Fatalf("china direct rules must appear before MATCH and GEOSITE before GEOIP:\n%s", yaml)
 	}
 }
 

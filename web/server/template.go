@@ -17,16 +17,43 @@ mode: rule
 log-level: warning
 tcp-concurrent: true
 ipv6: false
-external-controller: '127.0.0.1:9090'
 
 dns:
   enable: true
   ipv6: false
   enhanced-mode: fake-ip
   fake-ip-range: 198.18.0.1/16
+  fake-ip-filter:
+    - "*.lan"
+    - "*.local"
+    - "*.localhost"
+    - localhost
+    - time.*.com
+    - time.*.gov
+    - time.*.edu.cn
+    - time.*.apple.com
+    - time-ios.apple.com
+    - time1.cloud.tencent.com
+    - ntp.*.com
+    - ntp.*.com.cn
+    - ntp.*.edu.cn
+    - ntp.*.org
+    - "*.ntp.org.cn"
+    - "*.pool.ntp.org"
+    - connectivitycheck.gstatic.com
+    - captive.apple.com
+    - detectportal.firefox.com
+    - msftconnecttest.com
+    - "*.msftconnecttest.com"
+    - msftncsi.com
+    - "*.msftncsi.com"
   nameserver:
     - https://doh.pub/dns-query
     - https://dns.alidns.com/dns-query
+  nameserver-policy:
+    "geosite:geolocation-!cn":
+      - https://cloudflare-dns.com/dns-query
+      - https://dns.google/dns-query
 
 proxies:
   - name: %s
@@ -49,8 +76,6 @@ proxies:
 proxy-groups:
   - name: Proxy
     type: select
-    url: http://cp.cloudflare.com/generate_204
-    interval: 300
     proxies:
       - %s
       - DIRECT
@@ -70,6 +95,7 @@ rules:
   - IP-CIDR6,fc00::/7,DIRECT,no-resolve
   - IP-CIDR6,fe80::/10,DIRECT,no-resolve
 %s
+  - GEOSITE,CN,DIRECT
   - GEOIP,CN,DIRECT
   - MATCH,Proxy
 `,

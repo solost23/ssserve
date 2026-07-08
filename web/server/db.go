@@ -493,19 +493,45 @@ func (d *DB) DeleteToken(token string) error {
 }
 
 func (d *DB) AddStats(increments map[string]int64) error {
+	hasDelta := false
 	for token, delta := range increments {
 		if delta <= 0 {
 			continue
 		}
-		if _, err := d.db.Exec(
-			`UPDATE tokens SET used_bytes = used_bytes + ?, updated_at = ?
-			 WHERE token = ? AND deleted_at IS NULL AND active = 1`,
-			delta, now(), token,
-		); err != nil {
+		if token != "" {
+			hasDelta = true
+			break
+		}
+	}
+	if !hasDelta {
+		return nil
+	}
+
+	tx, err := d.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.Prepare(
+		`UPDATE tokens SET used_bytes = used_bytes + ?, updated_at = ?
+		 WHERE token = ? AND deleted_at IS NULL AND active = 1`,
+	)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	t := now()
+	for token, delta := range increments {
+		if delta <= 0 || token == "" {
+			continue
+		}
+		if _, err := stmt.Exec(delta, t, token); err != nil {
 			return err
 		}
 	}
-	return nil
+	return tx.Commit()
 }
 
 type scanner interface {

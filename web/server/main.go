@@ -30,6 +30,7 @@ type Config struct {
 	XrayPublicKey  string
 	XrayShortID    string
 	XrayServerName string
+	SyncEvery      time.Duration
 	FullSyncEvery  time.Duration
 }
 
@@ -45,6 +46,7 @@ func loadConfig() Config {
 		XrayPublicKey:  os.Getenv("XRAY_PUBLIC_KEY"),
 		XrayShortID:    os.Getenv("XRAY_SHORT_ID"),
 		XrayServerName: os.Getenv("XRAY_SERVER_NAME"),
+		SyncEvery:      5 * time.Minute,
 		FullSyncEvery:  10 * time.Minute,
 	}
 	if v := os.Getenv("XRAY_PORT"); v != "" {
@@ -60,6 +62,13 @@ func loadConfig() Config {
 			log.Fatal("XRAY_FULL_SYNC_INTERVAL must be a duration >= 1m, for example 10m")
 		}
 		c.FullSyncEvery = interval
+	}
+	if v := os.Getenv("XRAY_SYNC_INTERVAL"); v != "" {
+		interval, err := time.ParseDuration(v)
+		if err != nil || interval < 30*time.Second {
+			log.Fatal("XRAY_SYNC_INTERVAL must be a duration >= 30s, for example 5m")
+		}
+		c.SyncEvery = interval
 	}
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
@@ -141,8 +150,8 @@ func main() {
 	mgr := NewManager(ManagerConfig{
 		APIAddr:      cfg.XrayAPIAddr,
 		VLESSInbound: cfg.XrayInboundTag,
-		VLESSPort:    cfg.XrayPort,
 	})
+	defer mgr.Close()
 	h := &handler{
 		cfg:        cfg,
 		db:         db,
@@ -159,7 +168,7 @@ func main() {
 		}
 	}()
 	go func() {
-		for range time.Tick(30 * time.Second) {
+		for range time.Tick(cfg.SyncEvery) {
 			h.syncToManager()
 		}
 	}()

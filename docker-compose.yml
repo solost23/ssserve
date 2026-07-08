@@ -33,12 +33,6 @@ services:
         nofile:
           soft: 1048576
           hard: 1048576
-      healthcheck:
-        test: ["CMD", "xray", "api", "statsquery", "--server=127.0.0.1:10085", "-pattern", "user>>>"]
-        interval: 5s
-        timeout: 3s
-        retries: 12
-        start_period: 5s
       logging:
         driver: json-file
         options:
@@ -55,6 +49,7 @@ services:
         XRAY_PORT: ${XRAY_PORT:-443}
         XRAY_API_ADDR: ${XRAY_API_ADDR:-xray:10085}
         XRAY_INBOUND_TAG: ${XRAY_INBOUND_TAG:-vless-in}
+        XRAY_SYNC_INTERVAL: ${XRAY_SYNC_INTERVAL:-5m}
         XRAY_FULL_SYNC_INTERVAL: ${XRAY_FULL_SYNC_INTERVAL:-10m}
         XRAY_PUBLIC_KEY: ${XRAY_PUBLIC_KEY}
         XRAY_SHORT_ID: ${XRAY_SHORT_ID}
@@ -66,8 +61,7 @@ services:
       expose:
         - "8080"
       depends_on:
-        xray:
-          condition: service_healthy
+        - xray
       logging:
         driver: json-file
         options:

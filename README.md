@@ -67,6 +67,8 @@ XRAY_PUBLIC_KEY=replace-with-reality-public-key
 XRAY_SHORT_ID=replacehex
 XRAY_SERVER_NAME=www.cloudflare.com
 XRAY_DEST=www.cloudflare.com:443
+XRAY_SYNC_INTERVAL=5m
+XRAY_FULL_SYNC_INTERVAL=10m
 ```
 
 `SERVER_ADDR` 会用于：
@@ -76,6 +78,8 @@ XRAY_DEST=www.cloudflare.com:443
 - 客户端节点里的 `server`
 
 `SERVER_ADDR` 会写入订阅链接和客户端节点里的 `server` 字段。客户端如果通过域名连接就填域名；如果直接通过 IP 连接就填公网 IP。`XRAY_PORT` 是 VLESS REALITY 的公网端口，默认使用 443。
+
+`XRAY_SYNC_INTERVAL` 控制 subserver 后台检查 Xray 用户注册状态的频率，默认 `5m`；`XRAY_FULL_SYNC_INTERVAL` 控制强制全量提交 active token 的频率，默认 `10m`。创建、恢复 token 仍会立即同步到 Xray。
 
 ## 可选网络优化
 
