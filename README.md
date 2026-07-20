@@ -9,6 +9,8 @@
 - **nginx**：提供管理界面、API 反向代理和订阅接口。
 - **web/front**：Vue 3 管理界面。
 
+> 数据库说明：当前版本的 subserver 使用本地 SQLite 文件（`DB_PATH`），并依赖 SQLite 专用语法。不能仅在 Compose 中增加 PostgreSQL/MySQL 容器来完成切换，否则应用仍会继续写 SQLite。若需要远程数据库，需要同时改造 Go 数据访问层并提供一次性迁移；1 核 1GB 机器建议使用外部托管 PostgreSQL，避免在本机额外运行数据库服务。
+
 ## 一键部署
 
 在新 VPS 上 clone 仓库后，直接运行：
@@ -129,8 +131,8 @@ docker compose up -d --build
 
 ```bash
 docker compose ps
-docker logs --tail 100 xray
-docker logs --tail 100 subserver
+docker logs --tail 100 ssserve-xray
+docker logs --tail 100 ssserve-server
 ```
 
 访问管理界面：
@@ -186,7 +188,7 @@ docker compose up -d --build
 ```bash
 curl -I http://127.0.0.1/
 curl -I http://SERVER_ADDR/
-docker exec nginx-sub tail -f /var/log/nginx/sub.access.log
+docker exec ssserve-nginx tail -f /var/log/nginx/sub.access.log
 ```
 
 如果 `xray` 容器启动失败，先确认：
