@@ -16,7 +16,7 @@
       "0": {
         "statsUserUplink": true,
         "statsUserDownlink": true,
-        "bufferSize": 4,
+        "bufferSize": 512,
         "connIdle": 300,
         "uplinkOnly": 2,
         "downlinkOnly": 5
@@ -36,6 +36,9 @@
       "streamSettings": {
         "network": "tcp",
         "security": "reality",
+        "sockopt": {
+          "tcpFastOpen": true
+        },
         "realitySettings": {
           "show": false,
           "dest": "www.cloudflare.com:443",
@@ -63,7 +66,12 @@
   "outbounds": [
     {
       "tag": "direct",
-      "protocol": "freedom"
+      "protocol": "freedom",
+      "streamSettings": {
+        "sockopt": {
+          "tcpFastOpen": true
+        }
+      }
     }
   ],
   "routing": {

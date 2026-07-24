@@ -46,7 +46,7 @@ func TestRenderClashIncludesRealityOptions(t *testing.T) {
 	yaml := renderClash(testConfig(), "1a078af0-1bb6-498b-9896-4651db5cbaf4")
 
 	for _, want := range []string{
-		`    udp: true`,
+		`    udp: false`,
 		`servername: "www.cloudflare.com"`,
 		`public-key: "public-key"`,
 		`short-id: "f919438ba90e7ae3"`,
@@ -103,18 +103,15 @@ func TestRenderClashIncludesDNSPolicy(t *testing.T) {
 		`  nameserver:`,
 		`    - https://doh.pub/dns-query`,
 		`    - https://dns.alidns.com/dns-query`,
+		`  fallback:`,
+		`    - https://cloudflare-dns.com/dns-query`,
+		`    - https://dns.google/dns-query`,
+		`  fallback-filter:`,
+		`    geoip-code: CN`,
+		`  proxy-server-nameserver:`,
 	} {
 		if !strings.Contains(yaml, want) {
 			t.Fatalf("clash yaml missing dns policy %q:\n%s", want, yaml)
-		}
-	}
-	for _, unexpected := range []string{
-		`nameserver-policy:`,
-		`https://cloudflare-dns.com/dns-query`,
-		`https://dns.google/dns-query`,
-	} {
-		if strings.Contains(yaml, unexpected) {
-			t.Fatalf("clash yaml should avoid remote dns policy %q:\n%s", unexpected, yaml)
 		}
 	}
 }

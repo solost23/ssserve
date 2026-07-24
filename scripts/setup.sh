@@ -20,7 +20,7 @@ if [ -z "$ADMIN_SECRET" ] || [ "$ADMIN_SECRET" = "replace-with-a-long-random-sec
     exit 1
 fi
 if [ -z "$XRAY_PRIVATE_KEY" ] || [ -z "$XRAY_PUBLIC_KEY" ]; then
-    echo "Error: XRAY_PRIVATE_KEY and XRAY_PUBLIC_KEY are required. Generate them with: docker run --rm ghcr.io/xtls/xray-core x25519"
+    echo "Error: XRAY_PRIVATE_KEY and XRAY_PUBLIC_KEY are required. Generate them with: docker run --rm ghcr.io/xtls/xray-core:26.7.11 x25519"
     exit 1
 fi
 if [ -z "$XRAY_SHORT_ID" ] || [ -z "$XRAY_SERVER_NAME" ] || [ -z "$XRAY_DEST" ]; then
@@ -31,6 +31,12 @@ fi
 XRAY_PORT=${XRAY_PORT:-443}
 XRAY_INBOUND_TAG=${XRAY_INBOUND_TAG:-vless-in}
 NODE_NAME=${NODE_NAME:-Tokyo}
+XRAY_TCP_CONGESTION=${XRAY_TCP_CONGESTION:-}
+
+XRAY_TCP_CONGESTION_FIELD=
+if [ -n "$XRAY_TCP_CONGESTION" ]; then
+    XRAY_TCP_CONGESTION_FIELD=$(printf ',\n          "tcpCongestion": "%s"' "$XRAY_TCP_CONGESTION")
+fi
 
 cp config/nginx.example.conf config/nginx.conf
 
@@ -53,7 +59,7 @@ cat > config/xray.json << EOF
       "0": {
         "statsUserUplink": true,
         "statsUserDownlink": true,
-        "bufferSize": 4,
+        "bufferSize": 512,
         "connIdle": 300,
         "uplinkOnly": 2,
         "downlinkOnly": 5
@@ -73,6 +79,9 @@ cat > config/xray.json << EOF
       "streamSettings": {
         "network": "tcp",
         "security": "reality",
+        "sockopt": {
+          "tcpFastOpen": true${XRAY_TCP_CONGESTION_FIELD}
+        },
         "realitySettings": {
           "show": false,
           "dest": "${XRAY_DEST}",
@@ -100,7 +109,12 @@ cat > config/xray.json << EOF
   "outbounds": [
     {
       "tag": "direct",
-      "protocol": "freedom"
+      "protocol": "freedom",
+      "streamSettings": {
+        "sockopt": {
+          "tcpFastOpen": true${XRAY_TCP_CONGESTION_FIELD}
+        }
+      }
     },
     {
       "tag": "blocked",

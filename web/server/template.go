@@ -50,6 +50,15 @@ dns:
   nameserver:
     - https://doh.pub/dns-query
     - https://dns.alidns.com/dns-query
+  fallback:
+    - https://cloudflare-dns.com/dns-query
+    - https://dns.google/dns-query
+  fallback-filter:
+    geoip: true
+    geoip-code: CN
+  proxy-server-nameserver:
+    - https://doh.pub/dns-query
+    - https://dns.alidns.com/dns-query
 
 proxies:
   - name: %s
@@ -58,7 +67,7 @@ proxies:
     port: %d
     uuid: %s
     network: tcp
-    udp: true
+    udp: false
     tls: true
     flow: xtls-rprx-vision
     servername: %s

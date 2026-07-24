@@ -31,7 +31,7 @@
 
 - 检查 Docker / Docker Compose；Linux 主机缺少 Docker 时会尝试安装。
 - 生成 `.env`、`ADMIN_SECRET`、REALITY 密钥和 `XRAY_SHORT_ID`。
-- 使用固定的 Xray 镜像 digest，避免 `latest` 或 tag 漂移。
+- 使用固定版本的 Xray 镜像 `26.7.11`，避免使用 `latest`。
 - 生成 `config/nginx.conf` 和 `config/xray.json`。
 - 执行 `docker compose up -d --build`。
 - 输出管理界面地址和节点地址。
@@ -51,7 +51,7 @@ cp .env.example .env
 生成 REALITY 密钥、short id 和管理密码：
 
 ```bash
-docker run --rm ghcr.io/xtls/xray-core x25519
+docker run --rm ghcr.io/xtls/xray-core:26.7.11 x25519
 openssl rand -hex 8
 openssl rand -hex 32
 ```
@@ -63,7 +63,7 @@ SERVER_ADDR=202.182.111.110.sslip.io
 NODE_NAME=Tokyo
 ADMIN_SECRET=replace-with-a-long-random-secret
 XRAY_PORT=443
-XRAY_IMAGE=ghcr.io/xtls/xray-core@sha256:592ec4d11f656db95598d01e76dbcc6e002d67360b96a5436500a938230f52c7
+XRAY_IMAGE=ghcr.io/xtls/xray-core:26.7.11
 XRAY_PRIVATE_KEY=replace-with-reality-private-key
 XRAY_PUBLIC_KEY=replace-with-reality-public-key
 XRAY_SHORT_ID=replacehex
@@ -71,6 +71,8 @@ XRAY_SERVER_NAME=www.cloudflare.com
 XRAY_DEST=www.cloudflare.com:443
 XRAY_SYNC_INTERVAL=5m
 XRAY_FULL_SYNC_INTERVAL=10m
+# Optional: set to bbr after confirming BBR is available in the Xray container.
+# XRAY_TCP_CONGESTION=bbr
 ```
 
 `SERVER_ADDR` 会用于：
@@ -98,7 +100,15 @@ net.core.default_qdisc=fq
 net.ipv4.tcp_congestion_control=bbr
 ```
 
-这是宿主机级别设置，不在 Docker 容器内生效。开启后可用脚本输出的 `sysctl` 结果确认当前拥塞控制算法是否为 `bbr`。
+使用 `./deploy.sh --enable-bbr` 创建新节点时，脚本还会把
+`XRAY_TCP_CONGESTION=bbr` 写入 `.env`，由 `scripts/setup.sh` 将 BBR 配置到
+Xray 的入站和 `freedom` 出站 socket；已有节点再次执行该命令也会补上这一行。
+也可以手动在 `.env` 增加，然后重新运行 `./scripts/setup.sh`。如果容器内不支持
+BBR，请不要设置该变量。
+
+当前生成的 Xray 配置使用 512 KiB 的连接缓冲（`bufferSize: 512`），客户端
+订阅关闭 UDP，因为服务端的 Vision 流不承载 UDP；DNS 对国内域名优先使用
+国内 DoH，对非国内结果使用 Cloudflare/Google fallback。
 
 ## 生成配置
 
