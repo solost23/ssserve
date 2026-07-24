@@ -84,7 +84,7 @@ cat > config/xray.json << EOF
           "tcpFastOpen": true${XRAY_TCP_CONGESTION_FIELD}
         },
         "realitySettings": {
-          "show": false,
+          "show": true,
           "dest": "${XRAY_DEST}",
           "xver": 0,
           "serverNames": [
