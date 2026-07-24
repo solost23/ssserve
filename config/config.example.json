@@ -1,7 +1,8 @@
 {
   "log": {
-    "access": "none",
-    "loglevel": "warning"
+    "access": "/dev/stdout",
+    "error": "/dev/stderr",
+    "loglevel": "debug"
   },
   "api": {
     "tag": "api",

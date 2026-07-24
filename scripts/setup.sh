@@ -43,8 +43,9 @@ cp config/nginx.example.conf config/nginx.conf
 cat > config/xray.json << EOF
 {
   "log": {
-    "access": "none",
-    "loglevel": "warning"
+    "access": "/dev/stdout",
+    "error": "/dev/stderr",
+    "loglevel": "debug"
   },
   "api": {
     "tag": "api",
